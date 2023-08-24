@@ -143,39 +143,6 @@ void trade() {
         bullishCount++;
     }
 
-    double high6 = iHigh(_Symbol, PERIOD_CURRENT, 6);
-    double low6 = iLow(_Symbol, PERIOD_CURRENT, 6);
-    double open6 = iOpen(_Symbol, PERIOD_CURRENT, 6);
-    double close6 = iClose(_Symbol, PERIOD_CURRENT, 6);
-    if (open6 > close6) {
-        bearishCount++;
-    }
-    else {
-        bullishCount++;
-    }
-
-    double high7 = iHigh(_Symbol, PERIOD_CURRENT, 7);
-    double low7 = iLow(_Symbol, PERIOD_CURRENT, 7);
-    double open7 = iOpen(_Symbol, PERIOD_CURRENT, 7);
-    double close7 = iClose(_Symbol, PERIOD_CURRENT, 7);
-    if (open7 > close7) {
-        bearishCount++;
-    }
-    else {
-        bullishCount++;
-    }
-
-    double high8 = iHigh(_Symbol, PERIOD_CURRENT, 8);
-    double low8 = iLow(_Symbol, PERIOD_CURRENT, 8);
-    double open8 = iOpen(_Symbol, PERIOD_CURRENT, 8);
-    double close8 = iClose(_Symbol, PERIOD_CURRENT, 8);
-    if (open8 > close8) {
-        bearishCount++;
-    }
-    else {
-        bullishCount++;
-    }
-
     // Exponential moving average 9
     double exponentialMovingAverage9[];
     int exponentialMovingAverage9Def = iMA(_Symbol, _Period, 9, 0, MODE_EMA, PRICE_CLOSE);
@@ -201,7 +168,7 @@ void trade() {
     CopyBuffer(exponentialMovingAverage200Def, 0, 0, 3, exponentialMovingAverage200);
 
     // if exponential moving average 50 and 200 lower than current price action
-    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= 5)) {
+    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= 2)) {
         if (close1 > open1) { // previous candle was a bull
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
             Buy();
@@ -211,7 +178,7 @@ void trade() {
     }
 
     // if exponential moving average 50 and 200 greater than current price action
-    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 5)) {
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2)) {
         if (close1 < open1) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Sell();
