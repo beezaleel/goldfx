@@ -80,7 +80,7 @@ void CloseAll() {
     counter = 0;
     previousCandleOpen = 0.0;
     previousCandleClose = 0.0;
-    hasReachedAverageProfit = false;
+    //hasReachedAverageProfit = false;
 }
 
 void trade() {
@@ -103,43 +103,47 @@ void trade() {
     double low2 = iLow(_Symbol, PERIOD_CURRENT, 2);
     double open2 = iOpen(_Symbol, PERIOD_CURRENT, 2);
     double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
-    if (open2 > close2) {
-        bearishCount++;
-    }
-    else {
-        bullishCount++;
-    }
 
     double high3 = iHigh(_Symbol, PERIOD_CURRENT, 3);
     double low3 = iLow(_Symbol, PERIOD_CURRENT, 3);
     double open3 = iOpen(_Symbol, PERIOD_CURRENT, 3);
     double close3 = iClose(_Symbol, PERIOD_CURRENT, 3);
-    if (open3 > close3) {
-        bearishCount++;
-    }
-    else {
-        bullishCount++;
-    }
 
     double high4 = iHigh(_Symbol, PERIOD_CURRENT, 4);
     double low4 = iLow(_Symbol, PERIOD_CURRENT, 4);
     double open4 = iOpen(_Symbol, PERIOD_CURRENT, 4);
     double close4 = iClose(_Symbol, PERIOD_CURRENT, 4);
-    if (open4 > close4) {
+
+    double high5 = iHigh(_Symbol, PERIOD_CURRENT, 5);
+    double low5 = iLow(_Symbol, PERIOD_CURRENT, 5);
+    double open5 = iOpen(_Symbol, PERIOD_CURRENT, 5);
+    double close5 = iClose(_Symbol, PERIOD_CURRENT, 5);
+
+    if (open5 > close5) {
         bearishCount++;
     }
     else {
         bullishCount++;
     }
 
-    double high5 = iHigh(_Symbol, PERIOD_CURRENT, 5);
-    double low5 = iLow(_Symbol, PERIOD_CURRENT, 5);
-    double open5 = iOpen(_Symbol, PERIOD_CURRENT, 5);
-    double close5 = iClose(_Symbol, PERIOD_CURRENT, 5);
-    if (open5 > close5) {
+    if ((open4 > close4) && (close4 < close5)) {
         bearishCount++;
     }
-    else {
+    else if ((open4 < close4) && (close4 > close5)) {
+        bullishCount++;
+    }
+
+    if ((open3 > close3) && (close3 < close4)) {
+        bearishCount++;
+    }
+    else if ((open3 < close3) && (close3 > close4)) {
+        bullishCount++;
+    }
+
+    if ((open2 > close2) && (close2 < close3)) {
+        bearishCount++;
+    }
+    else if ((open2 < close2) && (close2 > close3)) {
         bullishCount++;
     }
 
@@ -167,8 +171,7 @@ void trade() {
     ArraySetAsSeries(exponentialMovingAverage200, true);
     CopyBuffer(exponentialMovingAverage200Def, 0, 0, 3, exponentialMovingAverage200);
 
-    // if exponential moving average 50 and 200 lower than current price action
-    if ((exponentialMovingAverage200[0] < low0) && (exponentialMovingAverage20[0] > low0) && (bullishCount >= 2)) {
+    if (bullishCount >= 3) {
         if (close1 > open1) { // previous candle was a bull
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
             Buy();
@@ -178,7 +181,7 @@ void trade() {
     }
 
     // if exponential moving average 50 and 200 greater than current price action
-    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2) && (exponentialMovingAverage20[0] < low0)) {
+    if (bearishCount >= 3) {
         if (close1 < open1) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Sell();
