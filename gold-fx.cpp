@@ -242,7 +242,6 @@ void OnTick() {
 
         // Profit falls below average profit and minimum profit set, exit
         if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
-        tradeCount++;
             CloseAll();
         }
 
