@@ -12,10 +12,10 @@ static bool selling = false;
 input double stopLoss = -15.0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 45.0;
+input double takeProfit = 40.0;
 
 // Average profit
-input double averageProfit = 10.0;
+input double averageProfit = 20.0;
 
 // Has hit average profit
 static bool hasReachedAverageProfit = false;
@@ -168,7 +168,7 @@ void trade() {
     CopyBuffer(exponentialMovingAverage200Def, 0, 0, 3, exponentialMovingAverage200);
 
     // if exponential moving average 50 and 200 lower than current price action
-    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= 2)) {
+    if ((exponentialMovingAverage200[0] < low0) && (exponentialMovingAverage20[0] > low0) && (bullishCount >= 2)) {
         if (close1 > open1) { // previous candle was a bull
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
             Buy();
@@ -178,7 +178,7 @@ void trade() {
     }
 
     // if exponential moving average 50 and 200 greater than current price action
-    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2)) {
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2) && (exponentialMovingAverage20[0] < low0)) {
         if (close1 < open1) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Sell();
@@ -241,9 +241,9 @@ void OnTick() {
         }
 
         // Profit falls below average profit and minimum profit set, exit
-        if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
-            CloseAll();
-        }
+        //if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
+            //CloseAll();
+        //}
 
         // Take profit
         if (diff >= takeProfit) {
