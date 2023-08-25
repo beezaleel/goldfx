@@ -7,6 +7,8 @@ input double Money_FixLot_Lots = 0.10;
 int magicNumber = 109814;
 static bool buying = false;
 static bool selling = false;
+static bool hasbullishCrossing = false;
+static bool hasBearishCrossing = true;
 
 // Set stop loss. This is can be changed from the UI
 input double stopLoss = -15.0;
@@ -80,7 +82,9 @@ void CloseAll() {
     counter = 0;
     previousCandleOpen = 0.0;
     previousCandleClose = 0.0;
-    //hasReachedAverageProfit = false;
+    hasbullishCrossing = false;
+    hasBearishCrossing = true;
+    hasReachedAverageProfit = false;
 }
 
 void trade() {
@@ -171,21 +175,34 @@ void trade() {
     ArraySetAsSeries(exponentialMovingAverage200, true);
     CopyBuffer(exponentialMovingAverage200Def, 0, 0, 3, exponentialMovingAverage200);
 
-    if (bullishCount >= 3) {
+    if (((exponentialMovingAverage9[0] > exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage20[1]))) {
+        hasbullishCrossing = true;
+    }
+
+    if (((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage50[1]))) {
+        if (bullishCount >= 2 && hasbullishCrossing) {
         if (close1 > open1) { // previous candle was a bull
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
-            Buy();
-            buying = true;
+                Buy();
+                buying = true;
+                hasbullishCrossing = false;
             }
         }
     }
+    }
 
-    // if exponential moving average 50 and 200 greater than current price action
-    if (bearishCount >= 3) {
-        if (close1 < open1) {
-            if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
-                Sell();
-                selling = true;
+    if (((exponentialMovingAverage9[0] < exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage20[1]))) {
+        hasBearishCrossing = true;
+    }
+    if (((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage50[1]))) {
+        // if exponential moving average 50 and 200 greater than current price action
+        if (bearishCount >= 2) {
+            if (close1 < open1) {
+                if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+                    Sell();
+                    selling = true;
+                    hasBearishCrossing = false;
+                }
             }
         }
     }
@@ -232,6 +249,14 @@ void OnTick() {
     if (!shouldContinueTrading()) {
         trade();
 
+        if (PositionSelect(_Symbol) && selling) {
+            hasBearishCrossing = false;
+        }
+
+        if (PositionSelect(_Symbol) && buying) {
+            hasbullishCrossing = false;
+        }
+
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
         double accountProfit = AccountInfoDouble(ACCOUNT_PROFIT);
         double accountEquity = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -244,9 +269,9 @@ void OnTick() {
         }
 
         // Profit falls below average profit and minimum profit set, exit
-        //if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
-            //CloseAll();
-        //}
+        if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
+            CloseAll();
+        }
 
         // Take profit
         if (diff >= takeProfit) {
