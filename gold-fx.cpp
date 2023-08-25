@@ -14,7 +14,7 @@ static bool hasBearishCrossing = true;
 input double stopLoss = -15.0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 40.0;
+input double takeProfit = 30.0;
 
 // Average profit
 input double averageProfit = 20.0;
@@ -175,13 +175,10 @@ void trade() {
     ArraySetAsSeries(exponentialMovingAverage200, true);
     CopyBuffer(exponentialMovingAverage200Def, 0, 0, 3, exponentialMovingAverage200);
 
-    if (((exponentialMovingAverage9[0] > exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage20[1]))) {
-        hasbullishCrossing = true;
-    }
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage50[1]))) {
-        if (bullishCount >= 2 && hasbullishCrossing) {
-        if (close1 > open1) { // previous candle was a bull
+    if ((exponentialMovingAverage200[0] > low0) && (bullishCount >= 2)) {
+        if ((open1 < exponentialMovingAverage50[0]) && (close1 > exponentialMovingAverage50[0])) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Buy();
                 buying = true;
@@ -189,23 +186,51 @@ void trade() {
             }
         }
     }
-    }
 
-    if (((exponentialMovingAverage9[0] < exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage20[1]))) {
-        hasBearishCrossing = true;
-    }
-    if (((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage50[1]))) {
-        // if exponential moving average 50 and 200 greater than current price action
-        if (bearishCount >= 2) {
-            if (close1 < open1) {
-                if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
-                    Sell();
-                    selling = true;
-                    hasBearishCrossing = false;
-                }
+    if ((exponentialMovingAverage200[0] < low0) && (bearishCount >= 2)) {
+        if ((open1 > exponentialMovingAverage50[0]) && (close1 < exponentialMovingAverage50[0])) {
+            if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+                Sell();
+                selling = true;
+                hasBearishCrossing = false;
             }
         }
     }
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // if (((exponentialMovingAverage9[0] > exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage20[1]))) {
+    //     hasbullishCrossing = true;
+    // }
+
+    // if (((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] < exponentialMovingAverage50[1]))) {
+    //     if (bullishCount >= 2 && hasbullishCrossing) {
+    //     if (close1 > open1) { // previous candle was a bull
+    //         if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+    //             Buy();
+    //             buying = true;
+    //             hasbullishCrossing = false;
+    //         }
+    //     }
+    // }
+    // }
+
+    // if (((exponentialMovingAverage9[0] < exponentialMovingAverage20[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage20[1]))) {
+    //     hasBearishCrossing = true;
+    // }
+    // if (((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) && (exponentialMovingAverage9[1] > exponentialMovingAverage50[1]))) {
+    //     // if exponential moving average 50 and 200 greater than current price action
+    //     if (bearishCount >= 2) {
+    //         if (close1 < open1) {
+    //             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+    //                 Sell();
+    //                 selling = true;
+    //                 hasBearishCrossing = false;
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 bool shouldContinueTrading() {
