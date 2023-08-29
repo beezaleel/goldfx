@@ -14,13 +14,13 @@ static bool hasBearishCrossing = true;
 input double stopLoss = -15.0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 30.0;
+input double takeProfit = 40.0;
 
 // Average profit
 input double averageProfit = 20.0;
 
 // Has hit average profit
-static bool hasReachedAverageProfit = false;
+bool hasReachedAverageProfit = false;
 
 // Maximum allowed candle moving in opposite direction 
 input int invertedCandleCount = 3;
@@ -29,7 +29,8 @@ input int invertedCandleCount = 3;
 input int maximumNumOfFailedTrades = 3;
 
 // Exit with minimum profit
-input int minimumProfit = 5.5;
+input int minimumProfit = 10;
+int lowestProfit = 5;
 
 static int counter = 0;
 static double previousCandleOpen = 0.0;
@@ -83,7 +84,7 @@ void CloseAll() {
     previousCandleOpen = 0.0;
     previousCandleClose = 0.0;
     hasbullishCrossing = false;
-    hasBearishCrossing = true;
+    hasBearishCrossing = false;
     hasReachedAverageProfit = false;
 }
 
@@ -123,24 +124,24 @@ void trade() {
     double open5 = iOpen(_Symbol, PERIOD_CURRENT, 5);
     double close5 = iClose(_Symbol, PERIOD_CURRENT, 5);
 
-    if (open5 > close5) {
+    // if (open5 > close5) {
+    //     bearishCount++;
+    // }
+    // else {
+    //     bullishCount++;
+    // }
+
+    // if ((open4 > close4) && (close4 < close5)) {
+    //     bearishCount++;
+    // }
+    // else if ((open4 < close4) && (close4 > close5)) {
+    //     bullishCount++;
+    // }
+
+    if (open3 > close3) {
         bearishCount++;
     }
     else {
-        bullishCount++;
-    }
-
-    if ((open4 > close4) && (close4 < close5)) {
-        bearishCount++;
-    }
-    else if ((open4 < close4) && (close4 > close5)) {
-        bullishCount++;
-    }
-
-    if ((open3 > close3) && (close3 < close4)) {
-        bearishCount++;
-    }
-    else if ((open3 < close3) && (close3 > close4)) {
         bullishCount++;
     }
 
@@ -148,6 +149,13 @@ void trade() {
         bearishCount++;
     }
     else if ((open2 < close2) && (close2 > close3)) {
+        bullishCount++;
+    }
+
+    if ((open1 > close1) && (close1 < close2)) {
+        bearishCount++;
+    }
+    else if ((open1 < close1) && (close1 > close2)) {
         bullishCount++;
     }
 
@@ -177,8 +185,8 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if ((exponentialMovingAverage200[0] > low0) && (bullishCount >= 2)) {
-        if ((open1 < exponentialMovingAverage50[0]) && (close1 > exponentialMovingAverage50[0])) {
+    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= 2)) {
+        if ((open3 < exponentialMovingAverage50[0]) && (close3 > exponentialMovingAverage50[0]) && (open1 < close1)) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Buy();
                 buying = true;
@@ -187,8 +195,8 @@ void trade() {
         }
     }
 
-    if ((exponentialMovingAverage200[0] < low0) && (bearishCount >= 2)) {
-        if ((open1 > exponentialMovingAverage50[0]) && (close1 < exponentialMovingAverage50[0])) {
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2) && (open1 > close1)) {
+        if ((open3 > exponentialMovingAverage50[0]) && (close3 < exponentialMovingAverage50[0])) {
             if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
                 Sell();
                 selling = true;
@@ -294,9 +302,9 @@ void OnTick() {
         }
 
         // Profit falls below average profit and minimum profit set, exit
-        if ((diff < minimumProfit) && (hasReachedAverageProfit)) {
-            CloseAll();
-        }
+        //if ((diff > lowestProfit) && (diff < minimumProfit) && (hasReachedAverageProfit)) {
+            //CloseAll();
+        //}
 
         // Take profit
         if (diff >= takeProfit) {
@@ -311,7 +319,7 @@ void OnTick() {
         }
 
         // Calculate number of inverted candles
-        calculateInvertedCandles(diff);
+        //calculateInvertedCandles(diff);
 
     }
 }
