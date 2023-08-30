@@ -282,14 +282,6 @@ void OnTick() {
     if (!shouldContinueTrading()) {
         trade();
 
-        if (PositionSelect(_Symbol) && selling) {
-            hasBearishCrossing = false;
-        }
-
-        if (PositionSelect(_Symbol) && buying) {
-            hasbullishCrossing = false;
-        }
-
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
         double accountProfit = AccountInfoDouble(ACCOUNT_PROFIT);
         double accountEquity = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -307,19 +299,19 @@ void OnTick() {
         //}
 
         // Take profit
-        if (diff >= takeProfit) {
-            tradeCount = 0;
-            CloseAll();
-        }
+        //if (diff >= takeProfit) {
+            //tradeCount = 0;
+            //CloseAll();
+        //}
 
         // Stop loss
-        if (diff < stopLoss) {
-            tradeCount++;
-            CloseAll();
-        }
+        //if (diff < stopLoss) {
+            //tradeCount++;
+            //CloseAll();
+       // }
 
         // Calculate number of inverted candles
-        //calculateInvertedCandles(diff);
+        calculateInvertedCandles(diff);
 
     }
 }
