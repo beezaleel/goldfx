@@ -187,7 +187,7 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= 2)) {
         if ((open3 < exponentialMovingAverage50[0]) && (close3 > exponentialMovingAverage50[0]) && (open1 < close1)) {
-            if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+            if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
                 Buy();
                 buying = true;
                 hasbullishCrossing = false;
@@ -197,7 +197,7 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= 2) && (open1 > close1)) {
         if ((open3 > exponentialMovingAverage50[0]) && (close3 < exponentialMovingAverage50[0])) {
-            if (!PositionSelect(_Symbol)) { // Check if there is no current trade running
+            if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
                 Sell();
                 selling = true;
                 hasBearishCrossing = false;
