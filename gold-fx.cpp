@@ -3,7 +3,7 @@
 MqlTradeRequest request;
 MqlTradeResult result;
 
-input double Money_FixLot_Lots = 0.03;
+input double Money_FixLot_Lots = 0.05;
 int magicNumber = 109814;
 static bool buying = false;
 static bool selling = false;
@@ -24,7 +24,7 @@ input double averageProfit = 20.0;
 bool hasReachedAverageProfit = false;
 
 // Maximum allowed candle moving in opposite direction 
-input int invertedCandleCount = 3;
+input int invertedCandleCount = 1;
 
 // Maximum number of failed trade before final exit (Stop trading)
 input int maximumNumOfFailedTrades = 3;
@@ -251,24 +251,24 @@ void calculateInvertedCandles(double profit) {
             if (open1 > close1) {
                 counter++;
             }
-            else {
-                counter = 0;
-            }
+            // else {
+            //     counter = 0;
+            // }
         }
 
         if (selling) {
             if (open1 < close1) {
                 counter++;
             }
-            else {
-                counter = 0;
-            }
+            // else {
+            //     counter = 0;
+            // }
         }
         previousCandleOpen = open1;
         previousCandleClose = close1;
     }
     // Close trade if there 3 consecutive inverted candles
-    if (counter == invertedCandleCount && profit > 0) {
+    if (counter >= invertedCandleCount && profit > 0) {
         CloseAll();
     }
 }
