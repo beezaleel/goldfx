@@ -137,78 +137,57 @@ void trade() {
     double open7 = iOpen(_Symbol, PERIOD_CURRENT, 7);
     double close7 = iClose(_Symbol, PERIOD_CURRENT, 7);
 
-    if (open7 > close7) {
+
+    if ((open5 > close5)) {
         bearishCount++;
-        if (MathAbs(open7 - close7) >= AVERAGE_CANDLE_HEIGHT)
+        if (MathAbs(open5 - close5) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
     else {
         bullishCount++;
-        if (MathAbs(open7 - close7) >= AVERAGE_CANDLE_HEIGHT)
-            bullishCandleHeight++;
-    }
-
-    if ((open6 > close6) && (close6 < close7)) {
-        if (MathAbs(open6 - close6) >= AVERAGE_CANDLE_HEIGHT)
-            bearishCandleHeight++;
-        bearishCount++;
-    }
-    else if ((open6 < close6) && (close6 > close7)) {
-        bullishCount++;
-        if (MathAbs(open6 - close6) >= AVERAGE_CANDLE_HEIGHT)
-            bullishCandleHeight++;
-    }
-
-    if ((open5 > close5) && (close5 < close6) && (close6 < close7)) {
-        bearishCount++;
-        if (MathAbs(open5 - close5) >= AVERAGE_CANDLE_HEIGHT)
-            bearishCandleHeight++;
-    }
-    else if ((open5 < close5) && (close5 > close6) && (close6 > close7)) {
-        bullishCount++;
         if (MathAbs(open5 - close5) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
     }
 
-    if ((open4 > close4) && (close4 < close5) && (close5 < close6) && (close6 < close7)) {
+    if ((open4 > close4) && (close4 < close5)) {
         bearishCount++;
         if (MathAbs(open4 - close4) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
-    else if ((open4 < close4) && (close4 > close5) && (close5 > close6)  && (close6 > close7)) {
+    else if ((open4 < close4) && (close4 > close5)) {
         bullishCount++;
         if (MathAbs(open4 - close4) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
     }
 
-    if ((open3 > close3) && (close3 < close4)&& (close4 < close5) && (close5 < close6) && (close6 < close7)) {
+    if ((open3 > close3) && (close3 < close4)&& (close4 < close5)) {
         bearishCount++;
         if (MathAbs(open3 - close3) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
-    else if ((open3 < close3) && (close3 > close4) && (close4 > close5)  && (close5 > close6)  && (close6 > close7)) {
+    else if ((open3 < close3) && (close3 > close4) && (close4 > close5)) {
         bullishCount++;
         if (MathAbs(open3 - close3) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
     }
 
-    if ((open2 > close2) && (close2 < close3) && (close3 < close4)  && (close4 < close5)  && (close5 < close6)  && (close6 < close7)) {
+    if ((open2 > close2) && (close2 < close3) && (close3 < close4)  && (close4 < close5)) {
         bearishCount++;
         if (MathAbs(open2 - close2) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
-    else if ((open2 < close2) && (close2 > close3) && (close3 > close4) && (close4 > close5) && (close5 > close6) && (close6 > close7)) {
+    else if ((open2 < close2) && (close2 > close3) && (close3 > close4) && (close4 > close5)) {
         bullishCount++;
         if (MathAbs(open2 - close2) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
     }
 
-    if ((open1 > close1) && (close1 < close2)&& (close2 < close3) && (close3 < close4) && (close4 < close5) && (close5 < close6)&& (close6 < close7)) {
+    if ((open1 > close1) && (close1 < close2)&& (close2 < close3) && (close3 < close4) && (close4 < close5)) {
         bearishCount++;
         if (MathAbs(open1 - close1) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
-    else if ((open1 < close1) && (close1 > close2) && (close2 > close3) && (close3 > close4) && (close4 > close5) && (close5 > close6) && (close6 > close7)) {
+    else if ((open1 < close1) && (close1 > close2) && (close2 > close3) && (close3 > close4) && (close4 > close5)) {
         bullishCount++;
         if (MathAbs(open1 - close1) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
@@ -240,7 +219,7 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if ((bullishCount >= 4) && (bullishCandleHeight >= 1)) {
+    if ((bullishCount >= 3) && (bullishCandleHeight >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
             buying = true;
@@ -248,7 +227,7 @@ void trade() {
         }
     }
 
-    if ((bearishCount >= 4) && (bearishCandleHeight >= 1)) {
+    if ((bearishCount >= 3) && (bearishCandleHeight >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
             selling = true;
