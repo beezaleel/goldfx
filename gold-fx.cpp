@@ -9,7 +9,7 @@ static bool buying = false;
 static bool selling = false;
 static bool hasbullishCrossing = false;
 static bool hasBearishCrossing = true;
-double AVERAGE_CANDLE_HEIGHT = 0.70;
+input double AVERAGE_CANDLE_HEIGHT = 0.70;
 
 // Set stop loss. This is can be changed from the UI
 input double stopLoss = -25.0;
