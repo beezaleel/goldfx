@@ -268,7 +268,7 @@ void calculateInvertedCandles(double profit) {
         previousCandleClose = close1;
     }
     // Close trade if there 3 consecutive inverted candles
-    if (counter >= invertedCandleCount && profit > 0) {
+    if (counter >= invertedCandleCount && profit > 1) {
         CloseAll();
     }
 }
