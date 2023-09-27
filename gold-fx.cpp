@@ -219,7 +219,7 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if ((bullishCount >= 3) && (bullishCandleHeight >= 1)) {
+    if ((bullishCount >= 2) && (bullishCandleHeight >= 2)) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
             buying = true;
@@ -227,7 +227,7 @@ void trade() {
         }
     }
 
-    if ((bearishCount >= 3) && (bearishCandleHeight >= 1)) {
+    if ((bearishCount >= 2) && (bearishCandleHeight >= 2)) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
             selling = true;
