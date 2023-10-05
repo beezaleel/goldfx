@@ -12,13 +12,13 @@ static bool hasBearishCrossing = true;
 input double AVERAGE_CANDLE_HEIGHT = 1.00;
 
 // Set stop loss. This is can be changed from the UI
-input double stopLoss = -15.0;
+double stopLoss = 0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 50.0;
+input double takeProfit = 20.0;
 
 // Average profit
-input double averageProfit = 20.0;
+input double averageProfit = 15.0;
 
 // Has hit average profit
 bool hasReachedAverageProfit = false;
@@ -27,10 +27,10 @@ bool hasReachedAverageProfit = false;
 input int invertedCandleCount = 1;
 
 // Maximum number of failed trade before final exit (Stop trading)
-input int maximumNumOfFailedTrades = 3;
+input int maximumNumOfFailedTrades = 10;
 
 // Exit with minimum profit
-input int minimumProfit = 10;
+input int minimumProfit = 5;
 
 static int counter = 0;
 static double previousCandleOpen = 0.0;
@@ -147,9 +147,12 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] < low0) && 
     (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
-    (bullishCandleHeight >= 1)) {
+    (exponentialMovingAverage50[0] < low0) &&
+    (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) && 
+    (bullishCount >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
+            stopLoss = low1;
             buying = true;
             hasbullishCrossing = false;
         }
@@ -157,9 +160,12 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] > high0) && 
     (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
-    (bearishCandleHeight >= 1)) {
+    (exponentialMovingAverage50[0] > high0) &&
+    (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) && 
+    (bearishCount >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
+            stopLoss = high1;
             selling = true;
             hasBearishCrossing = false;
         }
@@ -171,40 +177,64 @@ bool shouldContinueTrading() {
 }
 
 void calculateInvertedCandles(double profit) {
+
+    double high0 = iHigh(_Symbol, PERIOD_CURRENT, 0);
+    double low0 = iLow(_Symbol, PERIOD_CURRENT, 0);
+    double open0 = iOpen(_Symbol, PERIOD_CURRENT, 0);
+    double close0 = iClose(_Symbol, PERIOD_CURRENT, 0);
+
     double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
     double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
     double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
     double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
 
-    if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
-        if (buying) {
-            if (open1 > close1) {
-                counter++;
-            }
-            // else {
-            //     counter = 0;
-            // }
+    if ((buying)) {
+        if (low0 < low1) {
+            CloseAll();
+            previousCandleOpen = open1;
         }
-
-        if (selling) {
-            if (open1 < close1) {
-                counter++;
-            }
-            // else {
-            //     counter = 0;
-            // }
-        }
-        previousCandleOpen = open1;
-        previousCandleClose = close1;
     }
-    // Close trade if there 3 consecutive inverted candles
-    if (counter >= invertedCandleCount) {
-        CloseAll();
+
+    if (selling) {
+        if (high0 > high1) {
+            CloseAll();
+            previousCandleOpen = open1;
+        }
     }
 }
 
 void OnTick() {
     if (!shouldContinueTrading()) {
+        double high0 = iHigh(_Symbol, PERIOD_CURRENT, 1);
+        double low0 = iLow(_Symbol, PERIOD_CURRENT, 1);
+        double open0 = iOpen(_Symbol, PERIOD_CURRENT, 1);
+        double close0 = iClose(_Symbol, PERIOD_CURRENT, 1);
+
+        double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
+        double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
+        double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
+        double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+
+        //if (previousCandleOpen != 0 && previousCandleOpen != open1) {
+            //previousCandleOpen = 0;
+        //}
+
+        // if ((stopLoss != 0) && (stopLoss != low1) && (!buying)) {
+        //     stopLoss = 0;
+        // }
+
+        // if ((stopLoss != 0) && (stopLoss != high1) && (!selling)) {
+        //     stopLoss = 0;
+        // }
+
+        if (buying && low0 < stopLoss) {
+            CloseAll();
+        }
+
+        if (selling && high0 > stopLoss) {
+            CloseAll();
+        }
+        
         trade();
 
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -236,7 +266,7 @@ void OnTick() {
     //    }
 
         // Calculate number of inverted candles
-        calculateInvertedCandles(accountProfit);
+        //calculateInvertedCandles(accountProfit);
 
     }
 }
