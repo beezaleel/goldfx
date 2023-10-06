@@ -9,7 +9,7 @@ static bool buying = false;
 static bool selling = false;
 static bool hasbullishCrossing = false;
 static bool hasBearishCrossing = true;
-input double AVERAGE_CANDLE_HEIGHT = 1.00;
+input double AVERAGE_CANDLE_HEIGHT = 0.70;
 
 // Set stop loss. This is can be changed from the UI
 double stopLoss = 0;
@@ -147,8 +147,8 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] < low0) && 
     (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
-    (exponentialMovingAverage50[0] < low0) &&
-    (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) && 
+    (low1 < exponentialMovingAverage50[1] ) && 
+    (high1 > exponentialMovingAverage50[1] ) &&  
     (bullishCount >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
@@ -160,8 +160,8 @@ void trade() {
 
     if ((exponentialMovingAverage200[0] > high0) && 
     (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
-    (exponentialMovingAverage50[0] > high0) &&
-    (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) && 
+    (high1 > exponentialMovingAverage50[1]) && 
+    (low1 < exponentialMovingAverage50[1]) && 
     (bearishCount >= 1)) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
