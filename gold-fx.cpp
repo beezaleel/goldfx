@@ -3,7 +3,7 @@
 MqlTradeRequest request;
 MqlTradeResult result;
 
-input double Money_FixLot_Lots = 0.01;
+input double Money_FixLot_Lots = 0.05;
 int magicNumber = 109814;
 static bool buying = false;
 static bool selling = false;
@@ -15,7 +15,7 @@ input double AVERAGE_CANDLE_HEIGHT = 0.70;
 double stopLoss = 0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 20.0;
+input double takeProfit = 15.0;
 
 // Average profit
 input double averageProfit = 15.0;
@@ -30,7 +30,7 @@ input int invertedCandleCount = 1;
 input int maximumNumOfFailedTrades = 10;
 
 // Exit with minimum profit
-input int minimumProfit = 5;
+input int minimumProfit = 15;
 
 static int counter = 0;
 static double previousCandleOpen = 0.0;
@@ -107,13 +107,73 @@ void trade() {
     double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
     double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
 
+    double high2 = iHigh(_Symbol, PERIOD_CURRENT, 2);
+    double low2 = iLow(_Symbol, PERIOD_CURRENT, 2);
+    double open2 = iOpen(_Symbol, PERIOD_CURRENT, 2);
+    double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
 
-    if ((open1 > close1)) {
+    double high3 = iHigh(_Symbol, PERIOD_CURRENT, 3);
+    double low3 = iLow(_Symbol, PERIOD_CURRENT, 3);
+    double open3 = iOpen(_Symbol, PERIOD_CURRENT, 3);
+    double close3 = iClose(_Symbol, PERIOD_CURRENT, 3);
+
+    double high4 = iHigh(_Symbol, PERIOD_CURRENT, 4);
+    double low4 = iLow(_Symbol, PERIOD_CURRENT, 4);
+    double open4 = iOpen(_Symbol, PERIOD_CURRENT, 4);
+    double close4 = iClose(_Symbol, PERIOD_CURRENT, 4);
+
+    double high5 = iHigh(_Symbol, PERIOD_CURRENT, 5);
+    double low5 = iLow(_Symbol, PERIOD_CURRENT, 5);
+    double open5 = iOpen(_Symbol, PERIOD_CURRENT, 5);
+    double close5 = iClose(_Symbol, PERIOD_CURRENT, 5);
+
+
+    if (open5 > close5) {
+        bearishCount++;
+        if (MathAbs(open5 - close5) >= AVERAGE_CANDLE_HEIGHT)
+            bearishCandleHeight++;
+    }
+    else {
+        bullishCount++;
+        if (MathAbs(open5 - close5) >= AVERAGE_CANDLE_HEIGHT)
+            bullishCandleHeight++;
+    }
+    if ((open4 > close4) && (close4 < close5)) {
+        bearishCount++;
+        if (MathAbs(open4 - close4) >= AVERAGE_CANDLE_HEIGHT)
+            bearishCandleHeight++;
+    }
+    else if ((open4 < close4) && (close4 > close5)) {
+        bullishCount++;
+        if (MathAbs(open4 - close4) >= AVERAGE_CANDLE_HEIGHT)
+            bullishCandleHeight++;
+    }
+    if ((open3 > close3) && (close3 < close4)) {
+        bearishCount++;
+        if (MathAbs(open3 - close3) >= AVERAGE_CANDLE_HEIGHT)
+            bearishCandleHeight++;
+    }
+    else if ((open3 < close3) && (close3 > close4)) {
+        bullishCount++;
+        if (MathAbs(open3 - close3) >= AVERAGE_CANDLE_HEIGHT)
+            bullishCandleHeight++;
+    }
+    if ((open2 > close2) && (close2 < close3)) {
+        bearishCount++;
+        if (MathAbs(open2 - close2) >= AVERAGE_CANDLE_HEIGHT)
+            bearishCandleHeight++;
+    }
+    else if ((open2 < close2) && (close2 > close3)) {
+        bullishCount++;
+        if (MathAbs(open2 - close2) >= AVERAGE_CANDLE_HEIGHT)
+            bullishCandleHeight++;
+    }
+    if ((open1 > close1) && (close1 < close2)) {
         bearishCount++;
         if (MathAbs(open1 - close1) >= AVERAGE_CANDLE_HEIGHT)
             bearishCandleHeight++;
     }
-    else {
+    else if ((open1 < close1) && (close1 > close2)) {
         bullishCount++;
         if (MathAbs(open1 - close1) >= AVERAGE_CANDLE_HEIGHT)
             bullishCandleHeight++;
@@ -149,7 +209,7 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
     (low1 < exponentialMovingAverage50[1] ) && 
     (high1 > exponentialMovingAverage50[1] ) &&  
-    (bullishCount >= 1)) {
+    (bullishCount >= 3) && (bullishCandleHeight >= 1) && (open1 < close1)) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
             stopLoss = low1;
@@ -162,7 +222,7 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
     (high1 > exponentialMovingAverage50[1]) && 
     (low1 < exponentialMovingAverage50[1]) && 
-    (bearishCount >= 1)) {
+    (bearishCount >= 3) && (bearishCandleHeight >= 1) && (open1 > close1)) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
             stopLoss = high1;
