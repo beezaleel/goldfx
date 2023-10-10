@@ -288,10 +288,12 @@ void OnTick() {
         // }
 
         if (buying && low0 < stopLoss) {
+            tradeCount++;
             CloseAll();
         }
 
         if (selling && high0 > stopLoss) {
+            tradeCount++;
             CloseAll();
         }
         
