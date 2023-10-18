@@ -141,14 +141,18 @@ void trade() {
     if ((open1 > close1)) {
         double lengthCandle1 = MathAbs(high1 - low1);
         double lengthCandle2 = MathAbs(high2 - low2);
-        if (lengthCandle1 > lengthCandle2) {
+        if ((lengthCandle1 > lengthCandle2) && (open2 < close2)) {
+            bearishCount++;
+        } else if (open2 > close2) {
             bearishCount++;
         }
     }
     else if (open1 < close1) {
         double lengthCandle1 = MathAbs(high1 - low1);
         double lengthCandle2 = MathAbs(high2 - low2);
-        if (lengthCandle1 > lengthCandle2) {
+        if ((lengthCandle1 > lengthCandle2) && (open2 > close2)) {
+            bullishCount++;
+        } else if (open2 < close2) {
             bullishCount++;
         }
     }
@@ -184,10 +188,7 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
     (exponentialMovingAverage200[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage20[0] < exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage50[0] < low0) && (previousCandleOpen == 0)) {
+    (exponentialMovingAverage20[0] < exponentialMovingAverage9[0])) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
             buying = true;
@@ -200,10 +201,7 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
     (exponentialMovingAverage200[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage20[0] > exponentialMovingAverage9[0]) &&
-    (exponentialMovingAverage50[0] > high0) && (previousCandleOpen == 0)) {
+    (exponentialMovingAverage20[0] > exponentialMovingAverage9[0])) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
             selling = true;
@@ -217,50 +215,30 @@ bool shouldContinueTrading() {
 }
 
 void calculateInvertedCandles(double profit) {
+    double high0 = iHigh(_Symbol, PERIOD_CURRENT, 0);
+    double low0 = iLow(_Symbol, PERIOD_CURRENT, 0);
+    double open0 = iOpen(_Symbol, PERIOD_CURRENT, 0);
+    double close0 = iClose(_Symbol, PERIOD_CURRENT, 0);
+
     double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
     double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
     double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
     double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
 
-    if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
-        if (buying) {
-            if (open1 > close1) {
-                counter++;
-            }
-            // else {
-            //     counter = 0;
-            // }
+    if ((buying) && (profit > 1)) {
+        if (close0 < low1) {
+            CloseAll();
         }
-
-        if (selling) {
-            if (open1 < close1) {
-                counter++;
-            }
-            // else {
-            //     counter = 0;
-            // }
-        }
-        previousCandleOpen = open1;
-        previousCandleClose = close1;
     }
-    // Close trade if there 3 consecutive inverted candles
-    if (counter >= invertedCandleCount && profit > 1) {
-        CloseAll();
-        previousCandleOpen = open1;
+
+    if ((selling) && (profit > 1)) {
+        if (close0 > high1) {
+            CloseAll();
+        }
     }
 }
 
 void OnTick() {
-    if (!shouldContinueTrading()) {
-        double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
-        double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
-        double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
-        double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
-
-        if ((!buying) && (!selling) && (previousCandleOpen != 0) && (previousCandleOpen != open1)) {
-            previousCandleOpen = 0;
-        }
-
         trade();
 
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -295,4 +273,4 @@ void OnTick() {
         calculateInvertedCandles(accountProfit);
 
     }
-}
+
