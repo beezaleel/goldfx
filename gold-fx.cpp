@@ -3,7 +3,7 @@
 MqlTradeRequest request;
 MqlTradeResult result;
 
-input double Money_FixLot_Lots = 0.03;
+input double Money_FixLot_Lots = 0.08;
 int magicNumber = 109814;
 static bool buying = false;
 static bool selling = false;
@@ -12,7 +12,7 @@ static bool hasBearishCrossing = true;
 input double AVERAGE_CANDLE_HEIGHT = 0.70;
 
 // Set stop loss. This is can be changed from the UI
-input double stopLoss = -5.0;
+input double stopLoss = -10.0;
 
 // Set take profit. This is can be changed from the UI
 input double takeProfit = 50.0;
@@ -77,12 +77,15 @@ void CloseAllOrders() {
 }
 
 void CloseAll() {
+    double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
+    double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+
     CloseAllOrders();
     selling = false;
     buying = false;
     counter = 0;
-    previousCandleOpen = 0.0;
-    previousCandleClose = 0.0;
+    previousCandleOpen = NormalizeDouble(open1, 4);
+    previousCandleClose = NormalizeDouble(close1, 4);
     hasbullishCrossing = false;
     hasBearishCrossing = false;
     hasReachedAverageProfit = false;
@@ -188,6 +191,10 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
     (exponentialMovingAverage200[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
+    //(exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
+    //(exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
+    (previousCandleOpen == 0) &&
+    (previousCandleClose == 0) &&
     (exponentialMovingAverage20[0] < exponentialMovingAverage9[0])) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
@@ -201,6 +208,10 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
     (exponentialMovingAverage200[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
+    //(exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
+   // (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
+    (previousCandleOpen == 0) &&
+    (previousCandleClose == 0) &&
     (exponentialMovingAverage20[0] > exponentialMovingAverage9[0])) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
@@ -211,7 +222,7 @@ void trade() {
 }
 
 bool shouldContinueTrading() {
-    return tradeCount >= maximumNumOfFailedTrades;
+    return tradeCount <= maximumNumOfFailedTrades;
 }
 
 void calculateInvertedCandles(double profit) {
@@ -239,6 +250,15 @@ void calculateInvertedCandles(double profit) {
 }
 
 void OnTick() {
+    if (shouldContinueTrading()) {
+        double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
+        double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+
+        if ((!buying) && (!selling) && (NormalizeDouble(open1, 4) != previousCandleOpen) && (NormalizeDouble(close1, 4) != previousCandleClose)) {
+            previousCandleOpen = 0;
+            previousCandleClose = 0;
+        }
+
         trade();
 
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -246,6 +266,34 @@ void OnTick() {
         double accountEquity = AccountInfoDouble(ACCOUNT_EQUITY);
 
         //double diff = accountEquity - accountBalance; // calculate profit or loss
+
+            // Exponential moving average 9
+        double exponentialMovingAverage9[];
+        int exponentialMovingAverage9Def = iMA(_Symbol, _Period, 9, 0, MODE_EMA, PRICE_CLOSE);
+        ArraySetAsSeries(exponentialMovingAverage9, true);
+        CopyBuffer(exponentialMovingAverage9Def, 0, 0, 3, exponentialMovingAverage9);
+
+        // Exponential moving average 50
+        double exponentialMovingAverage50[];
+        int exponentialMovingAverage50Def = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
+        ArraySetAsSeries(exponentialMovingAverage50, true);
+        CopyBuffer(exponentialMovingAverage50Def, 0, 0, 3, exponentialMovingAverage50);
+
+        // Close sell trade if there is sign of a buy
+        if (selling) {
+            if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
+                (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
+                CloseAll();
+            }
+        }
+
+        // Close buy trade if there is sign of a sell
+        if (buying) {
+            if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
+                (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
+                CloseAll();
+            }
+        }
 
         // diff greater than average profit set
         if (accountProfit > averageProfit) {
@@ -271,6 +319,6 @@ void OnTick() {
 
         // Calculate number of inverted candles
         calculateInvertedCandles(accountProfit);
-
     }
+}
 
