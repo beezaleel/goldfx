@@ -20,6 +20,13 @@ static double previousCandleOpen = 0.0;
 static double previousCandleClose = 0.0;
 double candle5Open = 0;
 double candle5Close = 0;
+input double averageProfit = 20.0;
+
+// Exit with minimum profit
+input int minimumProfit = 10;
+
+// Has hit average profit
+bool hasReachedAverageProfit = false;
 
 void Buy() {
     ZeroMemory(request);
@@ -275,6 +282,16 @@ void OnTick()
     ArraySetAsSeries(exponentialMovingAverage50, true);
     CopyBuffer(exponentialMovingAverage50Def, 0, 0, 3, exponentialMovingAverage50);
 
+    // diff greater than average profit set
+    if (accountProfit > averageProfit) {
+        hasReachedAverageProfit = true;
+    }
+
+    // Profit falls below average profit and minimum profit set, exit
+    if ((accountProfit < minimumProfit) && (hasReachedAverageProfit)) {
+        CloseAll();
+    }
+
     if (difference > takeProfit) {
         CloseAll();
     }
@@ -290,22 +307,6 @@ void OnTick()
     if (PositionSelect(_Symbol) && buying) {
         hasbullishCrossing = false;
         hasbullishCrossing2 = false;
-    }
-
-    if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
-        (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
-        if (selling) {
-            CloseAll();
-            selling = false;
-        }
-    }
-
-    if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
-        (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
-         if (buying) {
-            CloseAll();
-            buying = false;
-        }
     }
 
     if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
@@ -354,5 +355,6 @@ void CloseAll() {
     hasBearishCrossing = false;
     hasbullishCrossing2 = false;
     hasBearishCrossing2 = false;
+    hasReachedAverageProfit = false;
 }
 
