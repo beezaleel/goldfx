@@ -193,13 +193,11 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
-    (low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) &&
-    (low1 < exponentialMovingAverage20[0] && high1 > exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage20[0] < exponentialMovingAverage9[0]) &&
+    (((low1 < exponentialMovingAverage50[0]) && (high1 > exponentialMovingAverage50[0])) || ((low1 < exponentialMovingAverage20[0]) && (high1 > exponentialMovingAverage20[0])))
+    //(exponentialMovingAverage20[0] < exponentialMovingAverage9[0])
     //(exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     //(exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
-    (previousCandleOpen == 0) &&
-    (previousCandleClose == 0)) {
+            ) {
         if ((!PositionSelect(_Symbol)) && (!buying)) { // Check if there is no current trade running
             Buy();
             buying = true;
@@ -214,13 +212,11 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
-    (high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) &&
-    (high1 > exponentialMovingAverage20[0] && low1 < exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage20[0] > exponentialMovingAverage9[0]) &&
+    (((high1 > exponentialMovingAverage50[0]) && (low1 < exponentialMovingAverage50[0])) || ((high1 > exponentialMovingAverage20[0]) && (low1 < exponentialMovingAverage20[0])))
+    //(exponentialMovingAverage20[0] > exponentialMovingAverage9[0])
     //(exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
    // (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
-    (previousCandleOpen == 0) &&
-    (previousCandleClose == 0)) {
+            ) {
         if ((!PositionSelect(_Symbol)) && (!selling)) { // Check if there is no current trade running
             Sell();
             selling = true;
