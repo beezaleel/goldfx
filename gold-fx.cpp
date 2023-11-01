@@ -193,7 +193,9 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
-    (open1 < exponentialMovingAverage50[0] && close1 > exponentialMovingAverage50[0]) &&
+    (low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) &&
+    (low1 < exponentialMovingAverage20[0] && high1 > exponentialMovingAverage20[0]) &&
+    (exponentialMovingAverage20[0] < exponentialMovingAverage9[0]) &&
     //(exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     //(exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
     (previousCandleOpen == 0) &&
@@ -212,7 +214,9 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
-    (open1 > exponentialMovingAverage50[0] && close1 < exponentialMovingAverage50[0]) &&
+    (high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) &&
+    (high1 > exponentialMovingAverage20[0] && low1 < exponentialMovingAverage20[0]) &&
+    (exponentialMovingAverage20[0] > exponentialMovingAverage9[0]) &&
     //(exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
    // (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
     (previousCandleOpen == 0) &&
@@ -283,21 +287,21 @@ void OnTick() {
         ArraySetAsSeries(exponentialMovingAverage50, true);
         CopyBuffer(exponentialMovingAverage50Def, 0, 0, 3, exponentialMovingAverage50);
 
-        // Close sell trade if there is sign of a buy
-        if (selling) {
-            if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
-                (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
-                CloseAll();
-            }
-        }
+        // // Close sell trade if there is sign of a buy
+        // if (selling) {
+        //     if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
+        //         (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
+        //         CloseAll();
+        //     }
+        // }
 
-        // Close buy trade if there is sign of a sell
-        if (buying) {
-            if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
-                (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
-                CloseAll();
-            }
-        }
+        // // Close buy trade if there is sign of a sell
+        // if (buying) {
+        //     if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
+        //         (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
+        //         CloseAll();
+        //     }
+        // }
 
         // diff greater than average profit set
         if (accountProfit > averageProfit) {
