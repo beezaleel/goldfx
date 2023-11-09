@@ -12,10 +12,10 @@ static bool hasBearishCrossing = true;
 input double AVERAGE_CANDLE_HEIGHT = 0.70;
 
 // Set stop loss. This is can be changed from the UI
-input double stopLoss = -10.0;
+input double stopLoss = -2.0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 50.0;
+input double takeProfit = 5.0;
 
 // Average profit
 input double averageProfit = 20.0;
@@ -27,10 +27,10 @@ bool hasReachedAverageProfit = false;
 input int invertedCandleCount = 1;
 
 // Maximum number of failed trade before final exit (Stop trading)
-input int maximumNumOfFailedTrades = 5;
+input int maximumNumOfFailedTrades = 3;
 
 // Exit with minimum profit
-input int minimumProfit = 10;
+input double minimumProfit = 1.2;
 
 static int counter = 0;
 static double previousCandleOpen = 0.0;
@@ -193,6 +193,8 @@ void trade() {
     (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
+    (previousCandleOpen == 0) &&
+    (previousCandleClose == 0) &&
     (((low1 < exponentialMovingAverage50[0]) && (high1 > exponentialMovingAverage50[0])) || ((low1 < exponentialMovingAverage20[0]) && (high1 > exponentialMovingAverage20[0])))
     //(exponentialMovingAverage20[0] < exponentialMovingAverage9[0])
     //(exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
@@ -212,6 +214,8 @@ void trade() {
     (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
+    (previousCandleOpen == 0) &&
+    (previousCandleClose == 0) &&
     (((high1 > exponentialMovingAverage50[0]) && (low1 < exponentialMovingAverage50[0])) || ((high1 > exponentialMovingAverage20[0]) && (low1 < exponentialMovingAverage20[0])))
     //(exponentialMovingAverage20[0] > exponentialMovingAverage9[0])
     //(exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
