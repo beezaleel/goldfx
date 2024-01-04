@@ -12,7 +12,7 @@ static bool hasBearishCrossing = true;
 input double AVERAGE_CANDLE_HEIGHT = 0.70;
 
 // Set stop loss. This is can be changed from the UI
-input double stopLoss = -2.0;
+double stopLoss = 0;
 
 // Set take profit. This is can be changed from the UI
 input double takeProfit = 5.0;
@@ -89,6 +89,7 @@ void CloseAll() {
     hasbullishCrossing = false;
     hasBearishCrossing = false;
     hasReachedAverageProfit = false;
+    stopLoss = 0;
 }
 
 void trade() {
@@ -187,12 +188,13 @@ void trade() {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if ((bullishCount == 1) && 
-    (exponentialMovingAverage200[0] < low0) && 
-    (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
-    (exponentialMovingAverage200[0] < exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
+    //(exponentialMovingAverage200[0] < low0) && 
+    //(exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
+    //(exponentialMovingAverage200[0] < exponentialMovingAverage20[0]) &&
+    //(exponentialMovingAverage200[0] < exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] < exponentialMovingAverage9[0]) &&
+    (exponentialMovingAverage20[0] < exponentialMovingAverage9[0]) &&
     (previousCandleOpen == 0) &&
     (previousCandleClose == 0) &&
     (((low1 < exponentialMovingAverage50[0]) && (high1 > exponentialMovingAverage50[0])) || ((low1 < exponentialMovingAverage20[0]) && (high1 > exponentialMovingAverage20[0])))
@@ -204,16 +206,18 @@ void trade() {
             Buy();
             buying = true;
             hasbullishCrossing = false;
+            stopLoss = exponentialMovingAverage50[1];
         }
     }
 
     if ((bearishCount == 1) &&
-    (exponentialMovingAverage200[0] > high0) && 
-    (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
-    (exponentialMovingAverage200[0] > exponentialMovingAverage20[0]) &&
-    (exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
+    //(exponentialMovingAverage200[0] > high0) && 
+    //(exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
+    //(exponentialMovingAverage200[0] > exponentialMovingAverage20[0]) &&
+    //(exponentialMovingAverage200[0] > exponentialMovingAverage9[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage20[0]) &&
     (exponentialMovingAverage50[0] > exponentialMovingAverage9[0]) &&
+    (exponentialMovingAverage20[0] > exponentialMovingAverage9[0]) &&
     (previousCandleOpen == 0) &&
     (previousCandleClose == 0) &&
     (((high1 > exponentialMovingAverage50[0]) && (low1 < exponentialMovingAverage50[0])) || ((high1 > exponentialMovingAverage20[0]) && (low1 < exponentialMovingAverage20[0])))
@@ -225,6 +229,7 @@ void trade() {
             Sell();
             selling = true;
             hasBearishCrossing = false;
+            stopLoss = exponentialMovingAverage50[1];
         }
     }
 }
@@ -234,26 +239,29 @@ bool shouldContinueTrading() {
 }
 
 void calculateInvertedCandles(double profit) {
-    double high0 = iHigh(_Symbol, PERIOD_CURRENT, 0);
-    double low0 = iLow(_Symbol, PERIOD_CURRENT, 0);
-    double open0 = iOpen(_Symbol, PERIOD_CURRENT, 0);
-    double close0 = iClose(_Symbol, PERIOD_CURRENT, 0);
-
     double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
     double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
     double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
     double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
 
-    if ((buying) && (profit > 1)) {
-        if (close0 < low1) {
-            CloseAll();
+    if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
+        if (buying) {
+            if (open1 > close1) {
+                counter++;
+            }
         }
-    }
 
-    if ((selling) && (profit > 1)) {
-        if (close0 > high1) {
-            CloseAll();
+        if (selling) {
+            if (open1 < close1) {
+                counter++;
+            }
         }
+        previousCandleOpen = open1;
+        previousCandleClose = close1;
+    }
+    // Close trade if there 3 consecutive inverted candles
+    if (counter >= invertedCandleCount && profit > minimumProfit) {
+        CloseAll();
     }
 }
 
@@ -261,6 +269,10 @@ void OnTick() {
     if (shouldContinueTrading()) {
         double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
         double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+        double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
+        double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
+        double high0 = iHigh(_Symbol, PERIOD_CURRENT, 0);
+        double low0 = iLow(_Symbol, PERIOD_CURRENT, 0);
 
         if ((!buying) && (!selling) && (NormalizeDouble(open1, 4) != previousCandleOpen) && (NormalizeDouble(close1, 4) != previousCandleClose)) {
             previousCandleOpen = 0;
@@ -288,20 +300,20 @@ void OnTick() {
         CopyBuffer(exponentialMovingAverage50Def, 0, 0, 3, exponentialMovingAverage50);
 
         // // Close sell trade if there is sign of a buy
-        // if (selling) {
-        //     if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
-        //         (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
-        //         CloseAll();
-        //     }
-        // }
+        if (selling && accountProfit > 1) {
+            if ((exponentialMovingAverage9[0] > exponentialMovingAverage50[0]) &&
+                (exponentialMovingAverage9[1] < exponentialMovingAverage50[1])) {
+                CloseAll();
+            }
+        }
 
         // // Close buy trade if there is sign of a sell
-        // if (buying) {
-        //     if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
-        //         (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
-        //         CloseAll();
-        //     }
-        // }
+        if (buying && accountProfit > 1) {
+            if ((exponentialMovingAverage9[0] < exponentialMovingAverage50[0]) &&
+                (exponentialMovingAverage9[1] > exponentialMovingAverage50[1])) {
+                CloseAll();
+            }
+        }
 
         // diff greater than average profit set
         if (accountProfit > averageProfit) {
@@ -314,19 +326,24 @@ void OnTick() {
         }
 
         // Take profit
-        if (accountProfit >= takeProfit) {
-            tradeCount = 0;
+        // if (accountProfit >= takeProfit) {
+        //     tradeCount = 0;
+        //     CloseAll();
+        // }
+
+        // Stop loss
+        if (buying && low0 < stopLoss) {
+            tradeCount++;
             CloseAll();
         }
 
-        // Stop loss
-        if (accountProfit < stopLoss) {
+        if (selling && high0 > stopLoss) {
             tradeCount++;
             CloseAll();
-       }
+        }
 
         // Calculate number of inverted candles
-       // calculateInvertedCandles(accountProfit);
+       calculateInvertedCandles(accountProfit);
     }
 }
 
