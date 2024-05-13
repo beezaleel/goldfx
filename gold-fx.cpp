@@ -117,6 +117,12 @@ void trade() {
     double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
 
 
+    // Exponential moving average 50
+    double exponentialMovingAverage50[];
+    int exponentialMovingAverage50Def = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
+    ArraySetAsSeries(exponentialMovingAverage50, true);
+    CopyBuffer(exponentialMovingAverage50Def, 0, 0, 3, exponentialMovingAverage50);
+    
     // Exponential moving average 200
     double exponentialMovingAverage200[];
     int exponentialMovingAverage200Def = iMA(_Symbol, _Period, 200, 0, MODE_EMA, PRICE_CLOSE);
@@ -125,7 +131,7 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if (exponentialMovingAverage200[0] < low0) {
+    if ((exponentialMovingAverage200[0] < low0) && (exponentialMovingAverage200[0] < exponentialMovingAverage50[0])) {
         if ((open2 > close2) && (open1 < close1)) {
             double diff = MathAbs(close2 - open1);
             double buyLength = close1 - open1;
@@ -141,7 +147,7 @@ void trade() {
     }
 
     // Sell logic
-    if (exponentialMovingAverage200[0] > low0) {
+    if ((exponentialMovingAverage200[0] > low0) && (exponentialMovingAverage200[0] > exponentialMovingAverage50[0])) {
         if ((open2 < close2) && (open1 > close1)) {
             double diff = MathAbs(close2 - open1);
             double buyLength = close2 - open2;
