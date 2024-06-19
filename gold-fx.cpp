@@ -3,13 +3,13 @@
 MqlTradeRequest request;
 MqlTradeResult result;
 
-input double Money_FixLot_Lots = 0.05;
+input double Money_FixLot_Lots = 0.01;
 int magicNumber = 109814;
 static bool buying = false;
 static bool selling = false;
 static bool hasbullishCrossing = false;
 static bool hasBearishCrossing = true;
-double AVERAGE_CANDLE_HEIGHT = 0.70;
+double AVERAGE_CANDLE_HEIGHT = 0.30;
 
 // Set stop loss. This is can be changed from the UI
 double stopLoss = 0.0;
@@ -24,7 +24,7 @@ input double averageProfit = 20.0;
 bool hasReachedAverageProfit = false;
 
 // Maximum allowed candle moving in opposite direction 
-input int invertedCandleCount = 1;
+input int invertedCandleCount = 2;
 
 // Maximum number of failed trade before final exit (Stop trading)
 input int maximumNumOfFailedTrades = 3;
@@ -136,8 +136,9 @@ void trade() {
             double diff = MathAbs(close2 - open1);
             double buyLength = close1 - open1;
             double sellLength = open2 - close2;
+            double distanceFrom200 = high0 - exponentialMovingAverage200[0];
             if ((diff < offset) && (buyLength > sellLength)) {
-                if ((!PositionSelect(_Symbol)) && (!buying)) {
+                if ((!PositionSelect(_Symbol)) && (!buying) && (distanceFrom200 > AVERAGE_CANDLE_HEIGHT)) {
                 Buy();
                 buying = true;
                 stopLoss = exponentialMovingAverage200[0];
@@ -152,8 +153,9 @@ void trade() {
             double diff = MathAbs(close2 - open1);
             double buyLength = close2 - open2;
             double sellLength = open1 - close1;
+            double distanceFrom200 = exponentialMovingAverage200[0] - high0;
             if ((diff < offset) && (sellLength > buyLength)) {
-                if ((!PositionSelect(_Symbol)) && (!selling)) {
+                if ((!PositionSelect(_Symbol)) && (!selling) && (distanceFrom200 > AVERAGE_CANDLE_HEIGHT)) {
                 Sell();
                 selling = true;
                 stopLoss = exponentialMovingAverage200[0];
