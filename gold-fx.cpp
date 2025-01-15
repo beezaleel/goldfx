@@ -117,6 +117,12 @@ void trade() {
     double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
 
 
+    // Exponential moving average 9
+    double exponentialMovingAverage9[];
+    int exponentialMovingAverage9Def = iMA(_Symbol, _Period, 9, 0, MODE_EMA, PRICE_CLOSE);
+    ArraySetAsSeries(exponentialMovingAverage9, true);
+    CopyBuffer(exponentialMovingAverage9Def, 0, 0, 3, exponentialMovingAverage9);
+
     // Exponential moving average 50
     double exponentialMovingAverage50[];
     int exponentialMovingAverage50Def = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
@@ -131,13 +137,14 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((exponentialMovingAverage200[0] < low0) && (exponentialMovingAverage200[0] < exponentialMovingAverage50[0])) {
+    if ((exponentialMovingAverage200[0] < low0) && (exponentialMovingAverage200[0] < exponentialMovingAverage50[0]) && 
+    (exponentialMovingAverage50[0] < exponentialMovingAverage9[0])) {
         if ((open2 > close2) && (open1 < close1)) {
             double diff = MathAbs(close2 - open1);
-            double buyLength = close1 - open1;
-            double sellLength = open2 - close2;
+            double buyLength = high1 - low1;
+            double sellLength = high2 - low2;
             double distanceFrom200 = high0 - exponentialMovingAverage200[0];
-            if ((diff < offset) && (buyLength > sellLength)) {
+            if (buyLength > sellLength) {
                 if ((!PositionSelect(_Symbol)) && (!buying) && (distanceFrom200 > AVERAGE_CANDLE_HEIGHT)) {
                 Buy();
                 buying = true;
@@ -148,13 +155,14 @@ void trade() {
     }
 
     // Sell logic
-    if ((exponentialMovingAverage200[0] > low0) && (exponentialMovingAverage200[0] > exponentialMovingAverage50[0])) {
+    if ((exponentialMovingAverage200[0] > low0) && (exponentialMovingAverage200[0] > exponentialMovingAverage50[0]) && 
+    (exponentialMovingAverage50[0] > exponentialMovingAverage9[0])) {
         if ((open2 < close2) && (open1 > close1)) {
             double diff = MathAbs(close2 - open1);
-            double buyLength = close2 - open2;
-            double sellLength = open1 - close1;
+            double buyLength = high1 - low1;
+            double sellLength = high2 - low2;
             double distanceFrom200 = exponentialMovingAverage200[0] - high0;
-            if ((diff < offset) && (sellLength > buyLength)) {
+            if (sellLength > buyLength) {
                 if ((!PositionSelect(_Symbol)) && (!selling) && (distanceFrom200 > AVERAGE_CANDLE_HEIGHT)) {
                 Sell();
                 selling = true;
