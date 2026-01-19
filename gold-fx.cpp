@@ -15,7 +15,7 @@ double AVERAGE_CANDLE_HEIGHT = 0.30;
 double stopLoss = 0.0;
 
 // Set take profit. This is can be changed from the UI
-input double takeProfit = 50.0;
+input double takeProfit = 70.0;
 
 // Average profit
 input double averageProfit = 20.0;
