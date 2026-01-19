@@ -18,7 +18,7 @@ input double stopLoss = -20.0;
 input double takeProfit = 50.0;
 
 // Average profit
-input double averageProfit = 20.0;
+input double averageProfit = 10.0;
 
 // Has hit average profit
 bool hasReachedAverageProfit = false;
@@ -30,7 +30,7 @@ input int invertedCandleCount = 2;
 input int maximumNumOfFailedTrades = 3;
 
 // Exit with minimum profit
-input int minimumProfit = 10;
+input int minimumProfit = 1;
 
 // The offset range
 input double offset = 0.01;
