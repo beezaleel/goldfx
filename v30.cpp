@@ -303,13 +303,13 @@ void calculateInvertedCandles(double profit) {
 
     if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
         if (buying) {
-            if ((open1 < close1) && (profit > 1)) {
+            if (((open1 < close1) || (open1 > close1)) && (profit > 1)) {
                 counter++;
             }
         }
 
         if (selling) {
-            if ((open1 > close1) && (profit > 1)) {
+            if (((open1 > close1) || (open1 < close1)) && (profit > 1)) {
                 counter++;
             }
         }
