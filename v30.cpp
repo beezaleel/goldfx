@@ -37,6 +37,9 @@ input double offset = 0.01;
 
 input int candleCount = 3;
 
+// exit point
+double exitPoint = 0.0;
+
 static int counter = 0;
 static double previousCandleOpen = 0.0;
 static double previousCandleClose = 0.0;
@@ -271,20 +274,22 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((bullishCount >= candleCount) && (bullishCount > bearishCount)) {
+    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
+    (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]))) {
         double buyLength = high1 - low1;
         double sellLength = high2 - low2;
-        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && (close1 > open2) && (open1 < close2)) {
+        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) && (open4 < close4))) {
             Buy();
             buying = true;
         }
     }
 
     // Sell logic
-    if ((bearishCount >= candleCount) && (bearishCount > bullishCount)) {
+    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
+    (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]))) {
         double buyLength = high2 - low2;
         double sellLength = high1 - low1;
-        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && (close1 < open2) && (open1 > close2)) {
+        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) && (open4 > close4))) {
             Sell();
             selling = true;
         }
@@ -318,6 +323,7 @@ void calculateInvertedCandles(double profit) {
     }
     // Close trade if there 3 consecutive inverted candles
     if ((counter >= invertedCandleCount) && (profit > 1)) {
+        exitPoint = open1;
         CloseAll();
     }
 }
@@ -343,6 +349,10 @@ void OnTick() {
 
         double high0 = iHigh(_Symbol, PERIOD_CURRENT, 0);
         double low0 = iLow(_Symbol, PERIOD_CURRENT, 0);
+        double high1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
+        double low1 = iLow(_Symbol, PERIOD_CURRENT, 1);
+        double open1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
+        double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
 
 
         //double diff = accountEquity - accountBalance; // calculate profit or loss
@@ -354,12 +364,14 @@ void OnTick() {
 
         // Profit falls below average profit and minimum profit set, exit
         if ((accountProfit < minimumProfit) && (hasReachedAverageProfit)) {
+            exitPoint = open1;
             CloseAll();
         }
 
 
         if (accountProfit >= takeProfit) {
             tradeCount = 0;
+            exitPoint = open1;
             CloseAll();
         }
 
@@ -371,6 +383,7 @@ void OnTick() {
 
         if (accountProfit <= stopLoss) {
             tradeCount++;
+            exitPoint = open1;
             CloseAll();
         }
 
