@@ -274,22 +274,20 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
-    (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]))) {
+    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint)) {
         double buyLength = high1 - low1;
         double sellLength = high2 - low2;
-        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) && (open4 < close4))) {
+        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) && (open4 < close4)) && (buyLength > sellLength)) {
             Buy();
             buying = true;
         }
     }
 
     // Sell logic
-    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
-    (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]))) {
+    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint)) {
         double buyLength = high2 - low2;
         double sellLength = high1 - low1;
-        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) && (open4 > close4))) {
+        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) && (open4 > close4)) && (sellLength > buyLength)) {
             Sell();
             selling = true;
         }
@@ -308,13 +306,13 @@ void calculateInvertedCandles(double profit) {
 
     if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
         if (buying) {
-            if (((open1 < close1) || (open1 > close1)) && (profit > 1)) {
+            if ((open1 < close1) && (profit > 1)) {
                 counter++;
             }
         }
 
         if (selling) {
-            if (((open1 > close1) || (open1 < close1)) && (profit > 1)) {
+            if ((open1 > close1) && (profit > 1)) {
                 counter++;
             }
         }
