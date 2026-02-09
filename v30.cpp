@@ -12,7 +12,7 @@ static bool hasBearishCrossing = true;
 double AVERAGE_CANDLE_HEIGHT = 0.30;
 
 // Set stop loss. This is can be changed from the UI
-input double stopLoss = -20.0;
+double stopLoss = 0.0;
 
 // Set take profit. This is can be changed from the UI
 input double takeProfit = 50.0;
@@ -94,7 +94,7 @@ void CloseAll() {
     hasbullishCrossing = false;
     hasBearishCrossing = false;
     hasReachedAverageProfit = false;
-    //stopLoss = 0.0;
+    stopLoss = 0.0;
 }
 
 void trade() {
@@ -175,80 +175,80 @@ void trade() {
     double open0 = iOpen(_Symbol, PERIOD_CURRENT, 0);
     double close0 = iClose(_Symbol, PERIOD_CURRENT, 0);
 
-    if (open13 < close13) {
+    if ((low13 < low1) && (low13 < low2)) {
         bullishCount++;
     }
-    else if (open13 > close13) {
+    else if ((high13 > high1) && (high13 > high2)) {
         bearishCount++;
     }
 
-    if ((open12 < close12) && (close13 < open12)) {
+    if ((low12 < low1) && (low12 < low2)) {
         bullishCount++;
     }
-    else if ((open12 > close12) && (close13 > open12)) {
+    else if ((high12 > high1) && (high12 > high2)) {
         bearishCount++;
     }
 
-    if ((open11 < close11) && (close12 < open11)) {
+    if ((low11 < low1) && (low11 < low2)) {
         bullishCount++;
     }
-    else if ((open11 > close11) && (close12 > open11)) {
+    else if ((high11 > high1) && (high11 > high2)) {
         bearishCount++;
     }
 
-    if ((open10 < close10) && (close11 < open10)) {
+    if ((low10 < low1) && (low10 < low2)) {
         bullishCount++;
     }
-    else if ((open10 > close10) && (close11 > open10)) {
+    else if ((high10 > high1) && (high10 > high2)) {
         bearishCount++;
     }
 
-    if ((open9 < close9) && (close10 < open9)) {
+    if ((low9 < low1) && (low9 < low2)) {
         bullishCount++;
     }
-    else if ((open9 > close9) && (close10 > open9)) {
+    else if ((high9 > high1) && (high9 > high2)) {
         bearishCount++;
     }
 
-    if ((open8 < close8) && (close9 < open8)) {
+    if ((low8 < low1) && (low8 < low2)) {
         bullishCount++;
     }
-    else if ((open8 > close8) && (close9 > open8)) {
+    else if ((high8 > high1) && (high8 > high2)) {
         bearishCount++;
     }
 
-    if ((open7 < close7) && (close8 < open7)) {
+    if ((low7 < low1) && (low7 < low2)) {
         bullishCount++;
     }
-    else if ((open7 > close7) && (close8 > open7)) {
+    else if ((high7 > high1) && (high7 > high2)) {
         bearishCount++;
     }
 
-    if ((open6 < close6) && (close7 < open6)) {
+    if ((low6 < low1) && (low6 < low2)) {
         bullishCount++;
     }
-    else if ((open6 > close6) && (close7 > open6)) {
+    else if ((high6 > high1) && (high6 > high2)) {
         bearishCount++;
     }
 
-    if ((open5 < close5) && (close6 < open5)) {
+    if ((low5 < low1) && (low5 < low2)) {
         bullishCount++;
     }
-    else if ((open5 > close5) && (close6 > open5)) {
+    else if ((high5 > high1) && (high5 > high2)) {
         bearishCount++;
     }
 
-    if ((open4 < close4) && (close5 < open4)) {
+    if ((low4 < low1) && (low4 < low2)) {
         bullishCount++;
     }
-    else if ((open4 > close4) && (close5 > open4)) {
+    else if ((high4 > high1) && (high4 > high2)) {
         bearishCount++;
     }
 
-    if ((open3 < close3) && (close4 < open5)) {
+    if ((low3 < low1) && (low3 < low2)) {
         bullishCount++;
     }
-    else if ((open3 > close3) && (close4 > open3)) {
+    else if ((high3 > high1) && (high3 > high2)) {
         bearishCount++;
     }
 
@@ -274,22 +274,94 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint)) {
+    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
+    (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]) || 
+    (low3 < exponentialMovingAverage50[0] && high3 > exponentialMovingAverage50[0]) || 
+    (low4 < exponentialMovingAverage50[0] && high4 > exponentialMovingAverage50[0]))) {
         double buyLength = high1 - low1;
         double sellLength = high2 - low2;
-        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) && (open4 < close4)) && (buyLength > sellLength)) {
-            Buy();
-            buying = true;
+        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) || (open4 < close4))) {
+            stopLoss = low13;
+            if (low12 < stopLoss) {
+                stopLoss = low12;
+            }
+            if (low11 < stopLoss) {
+                stopLoss = low11;
+            }
+            if (low10 < stopLoss) {
+                stopLoss = low10;
+            }
+            if (low9 < stopLoss) {
+                stopLoss = low9;
+            }
+            if (low8 < stopLoss) {
+                stopLoss = low8;
+            }
+            if (low7 < stopLoss) {
+                stopLoss = low7;
+            }
+            if (low6 < stopLoss) {
+                stopLoss = low6;
+            }
+            if (low5 < stopLoss) {
+                stopLoss = low5;
+            }
+            if (low4 < stopLoss) {
+                stopLoss = low4;
+            }
+            if (low3 < stopLoss) {
+                stopLoss = low3;
+            }
+            if ((stopLoss < low1) && (stopLoss < low2)) {
+                Buy();
+                buying = true;
+            }
         }
     }
 
     // Sell logic
-    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint)) {
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
+    (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]) || 
+    (high3 > exponentialMovingAverage50[0] && low3 < exponentialMovingAverage50[0]) || 
+    (high4 > exponentialMovingAverage50[0] && low4 < exponentialMovingAverage50[0]))) {
         double buyLength = high2 - low2;
         double sellLength = high1 - low1;
-        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) && (open4 > close4)) && (sellLength > buyLength)) {
-            Sell();
-            selling = true;
+        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) || (open4 > close4))) {
+            stopLoss = high13;
+            if (high12 > stopLoss) {
+                stopLoss = high12;
+            }
+            if (high11 > stopLoss) {
+                stopLoss = high11;
+            }
+            if (high10 > stopLoss) {
+                stopLoss = high10;
+            }
+            if (high9 > stopLoss) {
+                stopLoss = high9;
+            }
+            if (high8 > stopLoss) {
+                stopLoss = high8;
+            }
+            if (high7 > stopLoss) {
+                stopLoss = high7;
+            }
+            if (high6 > stopLoss) {
+                stopLoss = high6;
+            }
+            if (high5 > stopLoss) {
+                stopLoss = high5;
+            }
+            if (high4 > stopLoss) {
+                stopLoss = high4;
+            }
+            if (high3 > stopLoss) {
+                stopLoss = high3;
+            }
+            if ((stopLoss > high1) && (stopLoss > high2)) {
+                Sell();
+                selling = true;
+            }
         }
     }
 }
@@ -374,21 +446,23 @@ void OnTick() {
         }
 
         // Stop loss
-        //if ((buying) && (low0 < stopLoss)) {
-            //tradeCount++;
-            //CloseAll();
-        //}
-
-        if (accountProfit <= stopLoss) {
+        if ((buying) && (low0 < stopLoss)) {
             tradeCount++;
             exitPoint = open1;
             CloseAll();
         }
 
-        //if ((selling) && (high0 > stopLoss)) {
-            //tradeCount++;
+        //if (accountProfit <= stopLoss) {
+           // tradeCount++;
+           // exitPoint = open1;
            // CloseAll();
-       // }
+        //}
+
+        if ((selling) && (high0 > stopLoss)) {
+            tradeCount++;
+            exitPoint = open1;
+            CloseAll();
+        }
 
         calculateInvertedCandles(accountProfit);
 
