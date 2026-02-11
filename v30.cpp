@@ -274,41 +274,14 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
+    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
     (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]) || 
     (low3 < exponentialMovingAverage50[0] && high3 > exponentialMovingAverage50[0]) || 
     (low4 < exponentialMovingAverage50[0] && high4 > exponentialMovingAverage50[0]))) {
         double buyLength = high1 - low1;
         double sellLength = high2 - low2;
-        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1) && ((open3 < close3) || (open4 < close4))) {
-            stopLoss = low13;
-            if (low12 < stopLoss) {
-                stopLoss = low12;
-            }
-            if (low11 < stopLoss) {
-                stopLoss = low11;
-            }
-            if (low10 < stopLoss) {
-                stopLoss = low10;
-            }
-            if (low9 < stopLoss) {
-                stopLoss = low9;
-            }
-            if (low8 < stopLoss) {
-                stopLoss = low8;
-            }
-            if (low7 < stopLoss) {
-                stopLoss = low7;
-            }
-            if (low6 < stopLoss) {
-                stopLoss = low6;
-            }
-            if (low5 < stopLoss) {
-                stopLoss = low5;
-            }
-            if (low4 < stopLoss) {
-                stopLoss = low4;
-            }
+        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1)) {
+            stopLoss = low4;
             if (low3 < stopLoss) {
                 stopLoss = low3;
             }
@@ -320,41 +293,14 @@ void trade() {
     }
 
     // Sell logic
-    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
+    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
     (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]) || 
     (high3 > exponentialMovingAverage50[0] && low3 < exponentialMovingAverage50[0]) || 
     (high4 > exponentialMovingAverage50[0] && low4 < exponentialMovingAverage50[0]))) {
         double buyLength = high2 - low2;
         double sellLength = high1 - low1;
-        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1) && ((open3 > close3) || (open4 > close4))) {
-            stopLoss = high13;
-            if (high12 > stopLoss) {
-                stopLoss = high12;
-            }
-            if (high11 > stopLoss) {
-                stopLoss = high11;
-            }
-            if (high10 > stopLoss) {
-                stopLoss = high10;
-            }
-            if (high9 > stopLoss) {
-                stopLoss = high9;
-            }
-            if (high8 > stopLoss) {
-                stopLoss = high8;
-            }
-            if (high7 > stopLoss) {
-                stopLoss = high7;
-            }
-            if (high6 > stopLoss) {
-                stopLoss = high6;
-            }
-            if (high5 > stopLoss) {
-                stopLoss = high5;
-            }
-            if (high4 > stopLoss) {
-                stopLoss = high4;
-            }
+        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1)) {
+            stopLoss = high4;
             if (high3 > stopLoss) {
                 stopLoss = high3;
             }
