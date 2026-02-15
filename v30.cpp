@@ -274,7 +274,7 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
+    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
     (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]) || 
     (low3 < exponentialMovingAverage50[0] && high3 > exponentialMovingAverage50[0]) || 
     (low4 < exponentialMovingAverage50[0] && high4 > exponentialMovingAverage50[0]))) {
@@ -285,6 +285,9 @@ void trade() {
             if (low3 < stopLoss) {
                 stopLoss = low3;
             }
+            if (exponentialMovingAverage200[0] < stopLoss) {
+                stopLoss = exponentialMovingAverage200[0];
+            }
             if ((stopLoss < low1) && (stopLoss < low2)) {
                 Buy();
                 buying = true;
@@ -293,7 +296,7 @@ void trade() {
     }
 
     // Sell logic
-    if ((bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
     (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]) || 
     (high3 > exponentialMovingAverage50[0] && low3 < exponentialMovingAverage50[0]) || 
     (high4 > exponentialMovingAverage50[0] && low4 < exponentialMovingAverage50[0]))) {
@@ -303,6 +306,9 @@ void trade() {
             stopLoss = high4;
             if (high3 > stopLoss) {
                 stopLoss = high3;
+            }
+            if (exponentialMovingAverage200[0] > stopLoss) {
+                stopLoss = exponentialMovingAverage200[0];
             }
             if ((stopLoss > high1) && (stopLoss > high2)) {
                 Sell();
