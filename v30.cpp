@@ -274,7 +274,7 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= candleCount) && (bullishCount > bearishCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
+    if ((exponentialMovingAverage200[0] < low0) && (bullishCount >= candleCount) && (open1 != exitPoint) && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
     (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]) || 
     (low3 < exponentialMovingAverage50[0] && high3 > exponentialMovingAverage50[0]) || 
     (low4 < exponentialMovingAverage50[0] && high4 > exponentialMovingAverage50[0]))) {
@@ -296,7 +296,7 @@ void trade() {
     }
 
     // Sell logic
-    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= candleCount) && (bearishCount > bullishCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
+    if ((exponentialMovingAverage200[0] > low0) && (bearishCount >= candleCount) && (open1 != exitPoint) && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
     (high2 > exponentialMovingAverage50[0] && low2 < exponentialMovingAverage50[0]) || 
     (high3 > exponentialMovingAverage50[0] && low3 < exponentialMovingAverage50[0]) || 
     (high4 > exponentialMovingAverage50[0] && low4 < exponentialMovingAverage50[0]))) {
