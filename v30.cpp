@@ -280,7 +280,7 @@ void trade() {
     (low4 < exponentialMovingAverage50[0] && high4 > exponentialMovingAverage50[0]))) {
         double buyLength = high1 - low1;
         double sellLength = high2 - low2;
-        if ((!PositionSelect(_Symbol)) && (!buying) && (open2 > close2) && (open1 < close1)) {
+        if ((!PositionSelect(_Symbol)) && (!buying) && ((open2 > close2) || (open2 < close2)) && (open1 < close1)) {
             stopLoss = low4;
             if (low3 < stopLoss) {
                 stopLoss = low3;
@@ -302,7 +302,7 @@ void trade() {
     (high4 > exponentialMovingAverage50[0] && low4 < exponentialMovingAverage50[0]))) {
         double buyLength = high2 - low2;
         double sellLength = high1 - low1;
-        if ((!PositionSelect(_Symbol)) && (!selling) && (open2 < close2) && (open1 > close1)) {
+        if ((!PositionSelect(_Symbol)) && (!selling) && ((open2 < close2) || (open2 > close2)) && (open1 > close1)) {
             stopLoss = high4;
             if (high3 > stopLoss) {
                 stopLoss = high3;

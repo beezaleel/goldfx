@@ -12,7 +12,7 @@ static bool hasBearishCrossing = true;
 double AVERAGE_CANDLE_HEIGHT = 0.30;
 
 // Set stop loss. This is can be changed from the UI
-double stopLoss = 0.0;
+input double stopLoss = -20.0;
 
 // Set take profit. This is can be changed from the UI
 input double takeProfit = 70.0;
@@ -27,7 +27,7 @@ bool hasReachedAverageProfit = false;
 input int invertedCandleCount = 2;
 
 // Maximum number of failed trade before final exit (Stop trading)
-input int maximumNumOfFailedTrades = 3;
+input int maximumNumOfFailedTrades = 10;
 
 // Exit with minimum profit
 input int minimumProfit = 10;
@@ -37,10 +37,27 @@ input double offset = 0.01;
 
 input int candleCount = 3;
 
+input int shift = 0;
+input int RangeBars = 10;
+input double MaxRangePoints = 500;
+input int MinimumConsolidationBars = 5;
+input double MaxLowRangePoints = 150;
+
 static int counter = 0;
 static double previousCandleOpen = 0.0;
 static double previousCandleClose = 0.0;
 static int tradeCount = 0;
+
+void DrawBuySignal()
+{
+   string name = "BuySignal_" + IntegerToString(TimeCurrent());
+   double arrowPrice = iLow(_Symbol, PERIOD_CURRENT, 0) - 50 * _Point;
+
+   ObjectCreate(0, name, OBJ_ARROW_UP, 0, TimeCurrent(), arrowPrice);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrLime);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 241);
+}
 
 void Buy() {
     ZeroMemory(request);
@@ -53,7 +70,8 @@ void Buy() {
     request.tp = 0;
     request.deviation = 50;
 
-    OrderSend(request, result);
+    if (OrderSend(request, result) && result.retcode == TRADE_RETCODE_DONE)
+        buying = true;
 }
 
 void Sell() {
@@ -68,6 +86,112 @@ void Sell() {
     request.deviation = 50;
 
     OrderSend(request, result);
+}
+
+// Returns the consolidation base low if at least MinimumConsolidationBars
+// of the last RangeBars completed candles have lows within MaxLowRangePoints.
+// Returns -1 if consolidation is not confirmed.
+// Pass shift=1 to examine only completed candles (exclude the live bar 0).
+double getConsolidationLow(int shift)
+{
+   int lowestLowIndex =
+      iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, RangeBars, shift);
+   double lowestLow =
+      iLow(_Symbol, PERIOD_CURRENT, lowestLowIndex);
+
+   double zoneTop = lowestLow + MaxLowRangePoints * _Point;
+
+   // Count how many of the last RangeBars candles have lows within the zone.
+   // Requiring MinimumConsolidationBars = 5 naturally rejects gradual downtrends
+   // because only 2-3 bars ever sit within MaxLowRangePoints of the lowest low
+   // during a decline, never enough to reach 5.
+   int consolidatingCount = 0;
+   for (int i = shift; i < shift + RangeBars; i++)
+   {
+      double candleLow = iLow(_Symbol, PERIOD_CURRENT, i);
+      if (candleLow >= lowestLow && candleLow <= zoneTop)
+         consolidatingCount++;
+   }
+
+   Print("Support=", lowestLow, " | zoneTop=", zoneTop,
+         " | consolidatingCount=", consolidatingCount,
+         " | needed=", MinimumConsolidationBars);
+
+   return (consolidatingCount >= MinimumConsolidationBars) ? lowestLow : -1;
+}
+
+// Returns true when the last RangeBars completed candles are consolidating
+// AND the current candle has entered the consolidation range via its wick (low)
+// or its body open — whichever touches the zone first.
+bool isLowConsolidating()
+{
+   double baseLow = getConsolidationLow(1); // start at bar 1 — skip live candle
+   if (baseLow < 0)
+   {
+      Print("Consolidation: not confirmed (fewer than ", MinimumConsolidationBars, " candles in range)");
+      return false;
+   }
+
+   double rangeTop  = baseLow + MaxLowRangePoints * _Point;
+
+   double currentLow  = iLow(_Symbol,  PERIOD_CURRENT, 0);
+   double currentOpen = iOpen(_Symbol, PERIOD_CURRENT, 0);
+
+   // Bar 0 is in the consolidation zone if its low or open is within [baseLow, rangeTop]
+   // Allow a small tolerance below baseLow for wicks that test support
+   double tolerance = MaxLowRangePoints * _Point * 0.2;
+   bool wickInRange = (currentLow  >= baseLow - tolerance && currentLow  <= rangeTop);
+   bool openInRange = (currentOpen >= baseLow              && currentOpen <= rangeTop);
+
+   Print("Consolidation zone: ", baseLow, " – ", rangeTop,
+         " | currentLow=", currentLow,
+         " | currentOpen=", currentOpen,
+         " | wickInRange=", wickInRange,
+         " | openInRange=", openInRange);
+
+   return wickInRange || openInRange;
+}
+
+bool isConsolidating(int shift)
+{
+   for(int start = shift;
+       start <= shift + RangeBars - MinimumConsolidationBars;
+       start++)
+   {
+      int highestIndex =
+         iHighest(_Symbol,
+                  PERIOD_CURRENT,
+                  MODE_HIGH,
+                  MinimumConsolidationBars,
+                  start);
+
+      int lowestIndex =
+         iLowest(_Symbol,
+                 PERIOD_CURRENT,
+                 MODE_LOW,
+                 MinimumConsolidationBars,
+                 start);
+
+      double highest =
+         iHigh(_Symbol,
+               PERIOD_CURRENT,
+               highestIndex);
+
+      double lowest =
+         iLow(_Symbol,
+              PERIOD_CURRENT,
+              lowestIndex);
+
+      double range =
+         (highest - lowest) / _Point;
+
+      if(range <= MaxRangePoints)
+      {
+         return true;
+      }
+   }
+
+   return false;
 }
 
 void CloseAllOrders() {
@@ -151,6 +275,12 @@ void trade() {
     ArraySetAsSeries(exponentialMovingAverage9, true);
     CopyBuffer(exponentialMovingAverage9Def, 0, 0, 3, exponentialMovingAverage9);
 
+    // Exponential moving average 20
+    double exponentialMovingAverage20[];
+    int exponentialMovingAverage20Def = iMA(_Symbol, _Period, 20, 0, MODE_EMA, PRICE_CLOSE);
+    ArraySetAsSeries(exponentialMovingAverage20, true);
+    CopyBuffer(exponentialMovingAverage20Def, 0, 0, 3, exponentialMovingAverage20);
+
     // Exponential moving average 50
     double exponentialMovingAverage50[];
     int exponentialMovingAverage50Def = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
@@ -165,23 +295,15 @@ void trade() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Buy logic
-    if ((exponentialMovingAverage200[0] < low0) && (bullishCount == candleCount)  && ((low1 < exponentialMovingAverage50[0] && high1 > exponentialMovingAverage50[0]) || 
-    (low2 < exponentialMovingAverage50[0] && high2 > exponentialMovingAverage50[0]) || 
-    (low3 < exponentialMovingAverage50[0] && high3 > exponentialMovingAverage50[0]))) {
-        //if ((open2 > close2) && (open1 < close1)) {
-            //double diff = MathAbs(close2 - open1);
-            //double buyLength = high1 - low1;
-            //double sellLength = high2 - low2;
-            //double distanceFrom200 = high0 - exponentialMovingAverage200[0];
-            //if (buyLength > sellLength) {
-                if ((!PositionSelect(_Symbol)) && (!buying) && (stopLoss != low3) && (close3 < close2) && (close2 < close1)) {
-                Buy();
-                buying = true;
-                stopLoss = low3;
+    //if ((exponentialMovingAverage200[0] < low0)) {
+                if (isLowConsolidating()) {
+                if ((!PositionSelect(_Symbol)) && (!buying)) {
+                    Buy();
+                    DrawBuySignal();
+                    //stopLoss = low3;
+                }
             }
-            //}
-        //}
-    }
+   // }
 
     // Sell logic
     if ((exponentialMovingAverage200[0] > low0) && (bearishCount == candleCount)  && ((high1 > exponentialMovingAverage50[0] && low1 < exponentialMovingAverage50[0]) || 
@@ -193,9 +315,9 @@ void trade() {
            // double distanceFrom200 = exponentialMovingAverage200[0] - high0;
             //if (sellLength > buyLength) {
                 if ((!PositionSelect(_Symbol)) && (!selling) && (stopLoss != high3) && (close3 > close2) && (close2 > close1)) {
-                Sell();
-                selling = true;
-                stopLoss = high3;
+               // Sell();
+               // selling = true;
+                //stopLoss = high3;
             }
            // }
         //}
@@ -214,13 +336,15 @@ void calculateInvertedCandles(double profit) {
 
     if ((open1 != previousCandleOpen) || (close1 != previousCandleClose)) {
         if (buying) {
-            if (((open1 < close1) || (open1 > close1)) && (profit > 1)) {
+            // Count bearish candles — they move against a buy
+            if ((open1 > close1) && (profit > 0)) {
                 counter++;
             }
         }
 
         if (selling) {
-            if (((open1 > close1) || (open1 < close1)) && (profit > 1)) {
+            // Count bullish candles — they move against a sell
+            if ((open1 < close1) && (profit > 0)) {
                 counter++;
             }
         }
@@ -282,13 +406,8 @@ void OnTick() {
             CloseAll();
         }
 
-        // Stop loss
-        if ((buying) && (low0 < stopLoss)) {
-            tradeCount++;
-            CloseAll();
-        }
-
-        if ((selling) && (high0 > stopLoss)) {
+        // Stop loss — close when account profit drops to or below the stopLoss value (e.g. -20)
+        if ((buying || selling) && (accountProfit <= stopLoss)) {
             tradeCount++;
             CloseAll();
         }
