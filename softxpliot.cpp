@@ -31,7 +31,7 @@ input int    SwingStrength                      = 3;
 input int    MaxEntries                         = 5;
 input int    RangeBarsSubsequent                = 6;
 input int    MinimumConsolidationBarsSubsequent = 3;
-input double DXYDailyChangeThreshold           = 0.01; // percent
+input double DXYDailyChangeThreshold           = 0.05; // percent — min DXY move to allow first entry
 input double RangeSwingTolerancePoints         = 300;  // max spread between swing H/H and L/L to call it a range
 input double TrailingSpeedFactor               = 1.0;  // >1 = slower trail (more room), <1 = tighter. e.g. 1.25 = 25% slower
 
@@ -131,6 +131,31 @@ double getDXYDailyChangePct()
       * MathPow(iClose("USDCHF", PERIOD_D1, 1),  0.036);
    if (yesterdayDXY == 0) return 0;
    return ((currentDXY - yesterdayDXY) / yesterdayDXY) * 100.0;
+}
+
+// Compares XAUUSD and DXY % moves from the start of the consolidation to the current bar.
+// Whichever moved more (by absolute value) is dominant and dictates the expected direction.
+// Returns 1 = expect BUY (gold rising or DXY falling dominates),
+//        -1 = expect SELL (gold falling or DXY rising dominates),
+//         0 = indeterminate.
+int getDominantDirection(int rangeBars)
+{
+   int startBar = 1 + rangeBars;
+
+   double xauStart = iClose(_Symbol, PERIOD_CURRENT, startBar);
+   double xauNow   = iClose(_Symbol, PERIOD_CURRENT, 0);
+   if (xauStart <= 0) return 0;
+   double xauDelta = (xauNow - xauStart) / xauStart * 100.0;
+
+   double dxyStart = getSyntheticDXYAtBar(startBar);
+   double dxyNow   = getSyntheticDXYAtBar(0);
+   if (dxyStart <= 0) return 0;
+   double dxyDelta = (dxyNow - dxyStart) / dxyStart * 100.0;
+
+   if (MathAbs(dxyDelta) > MathAbs(xauDelta))
+      return (dxyDelta > 0) ? -1 : 1;  // DXY up → sell gold; DXY down → buy gold
+   else
+      return (xauDelta > 0) ?  1 : -1; // XAU up → buy; XAU down → sell
 }
 
 // ── Market structure ─────────────────────────────────────────────────────────
@@ -454,9 +479,6 @@ void Buy(bool isSubsequent = false, double zoneFloor = 0.0)
    request.deviation    = 50;
 
    OrderSend(request, result);
-   Print("TRADE_ENTRY | direction=BUY | subsequent=", isSubsequent,
-         " | retcode=", result.retcode, " | price=", ask,
-         " | zoneFloor=", zoneFloor, " | dxyChangePct=", getDXYDailyChangePct());
 
    buying             = true;
    entryPrice         = (isSubsequent ? entryPrice : ask);
@@ -495,9 +517,6 @@ void Sell(bool isSubsequent = false, double zoneCeiling = 0.0)
    request.deviation    = 50;
 
    OrderSend(request, result);
-   Print("TRADE_ENTRY | direction=SELL | subsequent=", isSubsequent,
-         " | retcode=", result.retcode, " | price=", bid,
-         " | zoneCeiling=", zoneCeiling, " | dxyChangePct=", getDXYDailyChangePct());
 
    selling            = true;
    entryPrice         = (isSubsequent ? entryPrice : bid);
@@ -565,17 +584,17 @@ void trade()
 
    if (!newBarSinceLastEntry) return;
 
+
+
    // ── BUY ──────────────────────────────────────────────────────────────────
    if (!selling)
    {
       if (posCount >= MaxEntries) { /* max entries reached — wait */ }
       else if (posCount == 0)
       {
-         // First entry: wait for consolidation then buy the breakout above the zone.
-         // The consolidation window must have started after the last close to avoid
-         // re-entering on the same zone immediately after a trade closes.
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else if (getDominantDirection(RangeBars) != 1) { /* dominant instrument does not favour buying */ }
          else
          {
             double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
@@ -586,7 +605,6 @@ void trade()
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         // Subsequent entries: profit must grow by abs(stopLoss) since the last entry was placed
          double subFloor = getConsolidationLow(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
          double ema50    = getEMAValue(50);
          double vwap     = getVWAP();
@@ -605,9 +623,9 @@ void trade()
       if (posCount >= MaxEntries) { /* max entries reached — wait */ }
       else if (posCount == 0)
       {
-         // First entry: wait for consolidation then sell the breakout below the zone.
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else if (getDominantDirection(RangeBars) != -1) { /* dominant instrument does not favour selling */ }
          else
          {
             double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
@@ -618,7 +636,6 @@ void trade()
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         // Subsequent entries: profit must grow by abs(stopLoss) since the last entry was placed
          double subCeiling = getConsolidationHigh(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
          double ema50      = getEMAValue(50);
          double vwap       = getVWAP();
@@ -662,8 +679,6 @@ void OnTick()
 
          if (reversalCount >= reversalThreshold)
          {
-            Print("TRADE_EXIT | reason=REVERSAL | count=", reversalCount,
-                  " | threshold=", reversalThreshold);
             tradeCount++;
             CloseAll();
             return;
@@ -677,27 +692,8 @@ void OnTick()
    double contractSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
    int    posCount      = CountSymbolPositions();
 
-   // ── Debug log once per bar when positions are open ───────────────────────
-   static datetime lastDebugBar = 0;
-   datetime        currentBar   = iTime(_Symbol, PERIOD_CURRENT, 0);
-   if (posCount > 0 && currentBar != lastDebugBar)
-   {
-      lastDebugBar = currentBar;
-      Print("DEBUG | posCount=", posCount,
-            " | accountProfit=", accountProfit,
-            " | peakProfit=", peakProfit,
-            " | trailingActive=", trailingActive,
-            " | peakGainSinceLastEntry=", peakGainSinceLastEntry,
-            " | profitAtLastEntry=", profitAtLastEntry,
-            " | reversalCount=", reversalCount,
-            " | reversalThreshold=", reversalThreshold,
-            " | stopLoss=", stopLoss,
-            " | buying=", buying, " | selling=", selling);
-   }
-
    if (accountProfit >= takeProfit)
    {
-      Print("TRADE_EXIT | reason=TAKE_PROFIT | profit=", accountProfit);
       tradeCount = 0;
       CloseAll();
       return;
@@ -706,7 +702,6 @@ void OnTick()
    // Hard stop only applies when there is exactly one position (first entry, no subsequent yet)
    if (posCount == 1 && accountProfit <= stopLoss)
    {
-      Print("TRADE_EXIT | reason=STOP_LOSS | profit=", accountProfit, " | posCount=", posCount);
       tradeCount++;
       CloseAll();
       return;
@@ -727,9 +722,6 @@ void OnTick()
          double trailDrawback = stopLoss * TrailingSpeedFactor;
          if (accountProfit <= peakProfit + trailDrawback)
          {
-            Print("TRADE_EXIT | reason=TRAILING_STOP | peak=", peakProfit,
-                  " | profit=", accountProfit, " | trailDrawback=", trailDrawback,
-                  " | posCount=", posCount);
             tradeCount = 0;
             CloseAll();
             return;
