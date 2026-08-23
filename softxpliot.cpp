@@ -12,9 +12,12 @@ static double   entryPrice         = 0.0;
 static bool     trailingActive     = false;
 static double   entryZoneCeiling   = 0.0; // sell: 2 candles closing above this = exit
 static double   entryZoneFloor     = 0.0; // buy: 2 candles closing below this = exit
-static int      reversalCount      = 0;   // counts consecutive opposing closed candles
-static int      reversalThreshold  = 2;   // 2 for first entry, 3 for subsequent
-static datetime lastReversalBar    = 0;
+static int      reversalCount           = 0;
+static int      reversalThreshold       = 2;
+static datetime lastReversalBar         = 0;
+static datetime lastCloseBarTime        = 0;
+static double   profitAtLastEntry      = 0.0; // accountProfit when the last entry fired
+static double   peakGainSinceLastEntry = 0.0; // peak gain since that entry — next entry needs abs(stopLoss)
 
 input double Money_FixLot_Lots                  = 0.01;
 input double stopLoss                           = -20.0;
@@ -30,6 +33,7 @@ input int    RangeBarsSubsequent                = 6;
 input int    MinimumConsolidationBarsSubsequent = 3;
 input double DXYDailyChangeThreshold           = 0.01; // percent
 input double RangeSwingTolerancePoints         = 300;  // max spread between swing H/H and L/L to call it a range
+input double TrailingSpeedFactor               = 1.0;  // >1 = slower trail (more room), <1 = tighter. e.g. 1.25 = 25% slower
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -461,15 +465,17 @@ void Buy(bool isSubsequent = false, double zoneFloor = 0.0)
 
    if (!isSubsequent)
    {
-      entryZoneFloor    = zoneFloor;
-      reversalThreshold = 2;
+      entryZoneFloor           = zoneFloor;
+      reversalThreshold        = 2;
+      profitAtLastEntry        = 0.0;
+      peakGainSinceLastEntry   = 0.0;
    }
    else
    {
-      // Update zone floor to the new (higher) consolidation floor for subsequent entries
-      // Threshold rises to 3 for subsequent entries
       if (zoneFloor > 0) entryZoneFloor = zoneFloor;
-      reversalThreshold = 3;
+      reversalThreshold        = 3;
+      profitAtLastEntry        = AccountInfoDouble(ACCOUNT_PROFIT);
+      peakGainSinceLastEntry   = 0.0;
    }
 }
 
@@ -500,13 +506,17 @@ void Sell(bool isSubsequent = false, double zoneCeiling = 0.0)
 
    if (!isSubsequent)
    {
-      entryZoneCeiling  = zoneCeiling;
-      reversalThreshold = 2;
+      entryZoneCeiling         = zoneCeiling;
+      reversalThreshold        = 2;
+      profitAtLastEntry        = 0.0;
+      peakGainSinceLastEntry   = 0.0;
    }
    else
    {
       if (zoneCeiling > 0) entryZoneCeiling = zoneCeiling;
-      reversalThreshold = 3;
+      reversalThreshold        = 3;
+      profitAtLastEntry        = AccountInfoDouble(ACCOUNT_PROFIT);
+      peakGainSinceLastEntry   = 0.0;
    }
 }
 
@@ -532,8 +542,11 @@ void CloseAll()
    trailingActive     = false;
    entryZoneCeiling   = 0.0;
    entryZoneFloor     = 0.0;
-   reversalCount      = 0;
-   reversalThreshold  = 2;
+   reversalCount            = 0;
+   reversalThreshold        = 2;
+   profitAtLastEntry        = 0.0;
+   peakGainSinceLastEntry   = 0.0;
+   lastCloseBarTime         = iTime(_Symbol, PERIOD_CURRENT, 0);
    ObjectDelete(0, "TrailingStopLine");
 }
 
@@ -550,23 +563,30 @@ void trade()
    datetime currentBar           = iTime(_Symbol, PERIOD_CURRENT, 0);
    bool     newBarSinceLastEntry = (currentBar != lastEntryBarTime);
 
-   if (posCount >= MaxEntries) { DrawBlockedLabel(true, "max entries reached"); return; }
    if (!newBarSinceLastEntry) return;
 
    // ── BUY ──────────────────────────────────────────────────────────────────
    if (!selling)
    {
-      if (posCount == 0)
+      if (posCount >= MaxEntries) { /* max entries reached — wait */ }
+      else if (posCount == 0)
       {
-         // First entry: wait for consolidation then buy the breakout above the zone
-         double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
-         if (floor < 0) { /* no consolidation yet */ }
-         else if (!isBuyBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
-         else { Buy(false, floor); DrawBuySignal(); }
+         // First entry: wait for consolidation then buy the breakout above the zone.
+         // The consolidation window must have started after the last close to avoid
+         // re-entering on the same zone immediately after a trade closes.
+         datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
+         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else
+         {
+            double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
+            if (floor < 0) { /* no consolidation yet */ }
+            else if (!isBuyBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
+            else { Buy(false, floor); DrawBuySignal(); }
+         }
       }
-      else if (trailingActive)
+      else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         // Subsequent entries: trailing active + new consolidation breakout + above EMA50/VWAP
+         // Subsequent entries: profit must grow by abs(stopLoss) since the last entry was placed
          double subFloor = getConsolidationLow(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
          double ema50    = getEMAValue(50);
          double vwap     = getVWAP();
@@ -582,17 +602,23 @@ void trade()
    // ── SELL ─────────────────────────────────────────────────────────────────
    if (!buying)
    {
-      if (posCount == 0)
+      if (posCount >= MaxEntries) { /* max entries reached — wait */ }
+      else if (posCount == 0)
       {
-         // First entry: wait for consolidation then sell the breakout below the zone
-         double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
-         if (ceiling < 0) { /* no consolidation yet */ }
-         else if (!isSellBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
-         else { Sell(false, ceiling); DrawSellSignal(); }
+         // First entry: wait for consolidation then sell the breakout below the zone.
+         datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
+         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else
+         {
+            double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
+            if (ceiling < 0) { /* no consolidation yet */ }
+            else if (!isSellBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
+            else { Sell(false, ceiling); DrawSellSignal(); }
+         }
       }
-      else if (trailingActive)
+      else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         // Subsequent entries: trailing active + new consolidation breakout + below EMA50/VWAP
+         // Subsequent entries: profit must grow by abs(stopLoss) since the last entry was placed
          double subCeiling = getConsolidationHigh(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
          double ema50      = getEMAValue(50);
          double vwap       = getVWAP();
@@ -612,8 +638,8 @@ void OnTick()
 {
    if (shouldContinueTrading()) return;
 
-   // ── Reversal candle check (runs once per completed bar) ───────────────────
-   if (CountSymbolPositions() > 0)
+   // ── Reversal candle check — only active before trailing kicks in ─────────
+   if (CountSymbolPositions() > 0 && !trailingActive)
    {
       datetime lastBar = iTime(_Symbol, PERIOD_CURRENT, 1);
       if (lastBar != lastReversalBar)
@@ -649,6 +675,25 @@ void OnTick()
 
    double accountProfit = AccountInfoDouble(ACCOUNT_PROFIT);
    double contractSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   int    posCount      = CountSymbolPositions();
+
+   // ── Debug log once per bar when positions are open ───────────────────────
+   static datetime lastDebugBar = 0;
+   datetime        currentBar   = iTime(_Symbol, PERIOD_CURRENT, 0);
+   if (posCount > 0 && currentBar != lastDebugBar)
+   {
+      lastDebugBar = currentBar;
+      Print("DEBUG | posCount=", posCount,
+            " | accountProfit=", accountProfit,
+            " | peakProfit=", peakProfit,
+            " | trailingActive=", trailingActive,
+            " | peakGainSinceLastEntry=", peakGainSinceLastEntry,
+            " | profitAtLastEntry=", profitAtLastEntry,
+            " | reversalCount=", reversalCount,
+            " | reversalThreshold=", reversalThreshold,
+            " | stopLoss=", stopLoss,
+            " | buying=", buying, " | selling=", selling);
+   }
 
    if (accountProfit >= takeProfit)
    {
@@ -658,40 +703,60 @@ void OnTick()
       return;
    }
 
-   if (CountSymbolPositions() > 0 && accountProfit <= stopLoss)
+   // Hard stop only applies when there is exactly one position (first entry, no subsequent yet)
+   if (posCount == 1 && accountProfit <= stopLoss)
    {
-      Print("TRADE_EXIT | reason=STOP_LOSS | profit=", accountProfit);
+      Print("TRADE_EXIT | reason=STOP_LOSS | profit=", accountProfit, " | posCount=", posCount);
       tradeCount++;
       CloseAll();
       return;
    }
 
-   if (CountSymbolPositions() > 0)
+   if (posCount > 0)
    {
       if (accountProfit > peakProfit) peakProfit = accountProfit;
+
+      double gainSinceLastEntry = accountProfit - profitAtLastEntry;
+      if (gainSinceLastEntry > peakGainSinceLastEntry) peakGainSinceLastEntry = gainSinceLastEntry;
 
       if (peakProfit >= MathAbs(stopLoss))
       {
          trailingActive = true;
 
-         // Trail exit: profit has pulled back by abs(stopLoss) from peak
-         if (accountProfit <= peakProfit + stopLoss)
+         // Trail exit: profit has pulled back by abs(stopLoss) * TrailingSpeedFactor from peak
+         double trailDrawback = stopLoss * TrailingSpeedFactor;
+         if (accountProfit <= peakProfit + trailDrawback)
          {
-            Print("TRADE_EXIT | reason=TRAILING_STOP | peak=", peakProfit, " | profit=", accountProfit);
+            Print("TRADE_EXIT | reason=TRAILING_STOP | peak=", peakProfit,
+                  " | profit=", accountProfit, " | trailDrawback=", trailDrawback,
+                  " | posCount=", posCount);
             tradeCount = 0;
             CloseAll();
             return;
          }
 
-         // Draw trail level as a visual reference
+         // Draw trail line using weighted average entry price and total volume
+         // so the line is accurate regardless of how many positions are open
+         double totalVolume = 0, weightedPrice = 0;
+         for (int i = 0; i < PositionsTotal(); i++)
+         {
+            if (PositionGetSymbol(i) == _Symbol)
+            {
+               double vol = PositionGetDouble(POSITION_VOLUME);
+               totalVolume   += vol;
+               weightedPrice += PositionGetDouble(POSITION_PRICE_OPEN) * vol;
+            }
+         }
+         double avgEntry  = (totalVolume > 0) ? weightedPrice / totalVolume : entryPrice;
+         double totalLots = (totalVolume > 0) ? totalVolume : Money_FixLot_Lots;
          double trailPrice = buying
-            ? entryPrice + (peakProfit + stopLoss) / (Money_FixLot_Lots * contractSize)
-            : entryPrice - (peakProfit + stopLoss) / (Money_FixLot_Lots * contractSize);
+            ? avgEntry + (peakProfit + trailDrawback) / (totalLots * contractSize)
+            : avgEntry - (peakProfit + trailDrawback) / (totalLots * contractSize);
          DrawTrailingStopLine(trailPrice);
       }
       else
       {
-         // Not yet trailing — draw fixed stop for reference
+         // Not yet trailing — draw fixed stop based on first entry only
          double fixedStop = buying
             ? entryPrice + stopLoss / (Money_FixLot_Lots * contractSize)
             : entryPrice - stopLoss / (Money_FixLot_Lots * contractSize);
