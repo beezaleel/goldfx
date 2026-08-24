@@ -135,9 +135,9 @@ double getDXYDailyChangePct()
 
 // Compares XAUUSD and DXY % moves from the start of the consolidation to the current bar.
 // Whichever moved more (by absolute value) is dominant and dictates the expected direction.
-// Returns 1 = expect BUY (gold rising or DXY falling dominates),
-//        -1 = expect SELL (gold falling or DXY rising dominates),
-//         0 = indeterminate.
+// Returns  1 = expect BUY (gold rising or DXY falling dominates)
+//         -1 = expect SELL (gold falling or DXY rising dominates)
+//          0 = indeterminate
 int getDominantDirection(int rangeBars)
 {
    int startBar = 1 + rangeBars;
@@ -156,6 +156,22 @@ int getDominantDirection(int rangeBars)
       return (dxyDelta > 0) ? -1 : 1;  // DXY up → sell gold; DXY down → buy gold
    else
       return (xauDelta > 0) ?  1 : -1; // XAU up → buy; XAU down → sell
+}
+
+// Returns true when gold and DXY moved in the SAME direction during the consolidation window
+// (gold leading — enter at consolidation touch).
+// Returns false when OPPOSITE directions (DXY driving — wait for breakout).
+bool isSameDirection(int rangeBars)
+{
+   int startBar = 1 + rangeBars;
+   double xauStart = iClose(_Symbol, PERIOD_CURRENT, startBar);
+   double xauNow   = iClose(_Symbol, PERIOD_CURRENT, 0);
+   double dxyStart = getSyntheticDXYAtBar(startBar);
+   double dxyNow   = getSyntheticDXYAtBar(0);
+   if (xauStart <= 0 || dxyStart <= 0) return false;
+   bool goldRising = xauNow > xauStart;
+   bool dxyRising  = dxyNow > dxyStart;
+   return goldRising == dxyRising;
 }
 
 // ── Market structure ─────────────────────────────────────────────────────────
@@ -594,13 +610,24 @@ void trade()
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
-         else if (getDominantDirection(RangeBars) != 1) { /* dominant instrument does not favour buying */ }
          else
          {
             double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
             if (floor < 0) { /* no consolidation yet */ }
-            else if (!isBuyBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
-            else { Buy(false, floor); DrawBuySignal(); }
+            //else if (isRangingMarket()) { /* ranging — skip */ }
+            else if (getDominantDirection(RangeBars) != 1) { /* dominant instrument not favouring buy */ }
+            else if (isSameDirection(RangeBars))
+            {
+               // Row 2: gold ↑ DXY ↑ — gold leading, enter at consolidation touch
+               if (isLowConsolidating(RangeBars, MinimumConsolidationBars))
+                  { Buy(false, floor); DrawBuySignal(); }
+            }
+            else
+            {
+               // Row 1: gold ↑ DXY ↓ — DXY driving, wait for breakout
+               if (isBuyBreakout(RangeBars, MinimumConsolidationBars))
+                  { Buy(false, floor); DrawBuySignal(); }
+            }
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
@@ -625,13 +652,24 @@ void trade()
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
-         else if (getDominantDirection(RangeBars) != -1) { /* dominant instrument does not favour selling */ }
          else
          {
             double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
             if (ceiling < 0) { /* no consolidation yet */ }
-            else if (!isSellBreakout(RangeBars, MinimumConsolidationBars)) { /* no breakout yet */ }
-            else { Sell(false, ceiling); DrawSellSignal(); }
+            //else if (isRangingMarket()) { /* ranging — skip */ }
+            else if (getDominantDirection(RangeBars) != -1) { /* dominant instrument not favouring sell */ }
+            else if (isSameDirection(RangeBars))
+            {
+               // Row 4: gold ↓ DXY ↓ — gold leading, enter at consolidation touch
+               if (isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars))
+                  { Sell(false, ceiling); DrawSellSignal(); }
+            }
+            else
+            {
+               // Row 3: gold ↓ DXY ↑ — DXY driving, wait for breakout
+               if (isSellBreakout(RangeBars, MinimumConsolidationBars))
+                  { Sell(false, ceiling); DrawSellSignal(); }
+            }
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
