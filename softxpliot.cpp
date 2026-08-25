@@ -19,6 +19,7 @@ static datetime lastCloseBarTime        = 0;
 static double   profitAtLastEntry      = 0.0; // accountProfit when the last entry fired
 static double   peakGainSinceLastEntry = 0.0; // peak gain since that entry — next entry needs abs(stopLoss)
 static double   previousDXY           = 0.0;
+static datetime lastTradeDate         = 0;
 
 input double Money_FixLot_Lots                  = 0.01;
 input double stopLoss                           = -20.0;
@@ -134,6 +135,21 @@ double getDXYDailyChangePct()
       * MathPow(iClose("USDCHF", PERIOD_D1, 1),  0.036);
    if (yesterdayDXY == 0) return 0;
    return ((currentDXY - yesterdayDXY) / yesterdayDXY) * 100.0;
+}
+
+// Returns DXY momentum: positive = strengthening, negative = weakening.
+// First trade of the day: uses 100-bar rolling lookback.
+// Subsequent trades: compares current DXY vs value saved when last trade fired.
+double getDXYTrend()
+{
+   double dxyNow = getSyntheticDXYAtBar(0);
+   datetime today = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
+   bool isFirstTradeOfDay = (lastTradeDate < today);
+
+   if (isFirstTradeOfDay)
+      return dxyNow - getSyntheticDXYAtBar(100);
+   else
+      return (previousDXY > 0) ? dxyNow - previousDXY : dxyNow - getSyntheticDXYAtBar(100);
 }
 
 // Compares XAUUSD and DXY % moves from the start of the consolidation to the current bar.
@@ -479,7 +495,7 @@ void DrawBuySignal()
    ObjectCreate(0, lblName, OBJ_TEXT, 0, TimeCurrent(), price - 80 * _Point);
    ObjectSetString(0,  lblName, OBJPROP_TEXT,     "DXY: " + DoubleToString(getDXYDailyChangePct(), 4) + "%");
    ObjectSetInteger(0, lblName, OBJPROP_COLOR,    clrLime);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
+   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 11);
    ObjectSetString(0,  lblName, OBJPROP_FONT,     "Arial");
    ObjectSetInteger(0, lblName, OBJPROP_ANCHOR,   ANCHOR_TOP);
 }
@@ -497,7 +513,7 @@ void DrawSellSignal()
    ObjectCreate(0, lblName, OBJ_TEXT, 0, TimeCurrent(), price + 80 * _Point);
    ObjectSetString(0,  lblName, OBJPROP_TEXT,     "DXY: " + DoubleToString(getDXYDailyChangePct(), 4) + "%");
    ObjectSetInteger(0, lblName, OBJPROP_COLOR,    clrRed);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
+   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 11);
    ObjectSetString(0,  lblName, OBJPROP_FONT,     "Arial");
    ObjectSetInteger(0, lblName, OBJPROP_ANCHOR,   ANCHOR_BOTTOM);
 }
@@ -638,45 +654,39 @@ void trade()
    bool   inLowerHalf  = close0 < range200Mid;
    bool   inUpperHalf  = close0 > range200Mid;
 
-   // ── DXY filter ───────────────────────────────────────────────────────────
-   double currentDXY     = getSyntheticDXYAtBar(0);
-   double yesterdayDXY   = getDXYDailyChangePct();
-   double dxyDailyChange = yesterdayDXY;
-   bool   dxyFalling     = (previousDXY > 0 && currentDXY < previousDXY);
-   bool   dxyRising      = (previousDXY > 0 && currentDXY > previousDXY);
-   bool   dxyWeakToday   = dxyDailyChange < -0.05;
-   bool   dxyStrongToday = dxyDailyChange >= -0.05;
-   previousDXY = currentDXY;
-
    // ── BUY ──────────────────────────────────────────────────────────────────
    if (!selling)
    {
       if (posCount >= MaxEntries) { /* max entries reached — wait */ }
       else if (posCount == 0)
       {
-         datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
-         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
-         else if (!inLowerHalf) { /* price not in lower half of 200-bar range — skip buy */ }
-         else if (!dxyWeakToday || !dxyFalling) { /* DXY not weak enough — skip buy */ }
+         datetime zoneStart  = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
+         double floor    = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
+         double dxyNow   = getSyntheticDXYAtBar(0);
+         double dxyTrend = getDXYTrend();
+         datetime today  = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
+
+         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old */ }
+         else if (!inLowerHalf) { /* not in lower half */ }
+         else if (floor < 0)    { /* no consolidation */ }
+         else if (dxyTrend >= 0) { /* DXY not weakening */ }
+         else if (!isLowConsolidating(RangeBars, MinimumConsolidationBars)) { /* not touching zone */ }
          else
          {
-            double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
-            if (floor < 0) { /* no consolidation yet */ }
-            else if (!isLowConsolidating(RangeBars, MinimumConsolidationBars)) { /* live candle not touching zone */ }
-            else { Buy(false, floor); DrawBuySignal(); }
+            previousDXY   = dxyNow;
+            lastTradeDate = today;
+            Buy(false, floor); DrawBuySignal();
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         double subFloor = getConsolidationLow(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
-         double ema50    = getEMAValue(50);
-         double vwap     = getVWAP();
-         if (subFloor < 0 || !isBuyBreakout(RangeBarsSubsequent, MinimumConsolidationBarsSubsequent))
-            { /* no breakout yet */ }
-         else if (iClose(_Symbol, PERIOD_CURRENT, 0) <= ema50 || iClose(_Symbol, PERIOD_CURRENT, 0) <= vwap)
-            { /* below EMA50/VWAP */ }
+         double dxyNow = getSyntheticDXYAtBar(0);
+         if (dxyNow >= previousDXY) { /* DXY not weakening — skip subsequent buy */ }
          else
-            { Buy(true, subFloor); DrawBuySignal(); }
+         {
+            previousDXY = dxyNow;
+            Buy(true, 0); DrawBuySignal();
+         }
       }
    }
 
@@ -687,28 +697,32 @@ void trade()
       else if (posCount == 0)
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
-         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
-         else if (!inUpperHalf) { /* price not in upper half of 200-bar range — skip sell */ }
-         else if (!dxyStrongToday || !dxyRising) { /* DXY not strong enough — skip sell */ }
+         double   ceiling   = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
+         double   dxyNow    = getSyntheticDXYAtBar(0);
+         double   dxyTrend  = getDXYTrend();
+         datetime today     = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
+
+         if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old */ }
+         else if (!inUpperHalf)  { /* not in upper half */ }
+         else if (ceiling < 0)   { /* no consolidation */ }
+         else if (dxyTrend <= 0) { /* DXY not strengthening */ }
+         else if (!isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars)) { /* not touching zone */ }
          else
          {
-            double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
-            if (ceiling < 0) { /* no consolidation yet */ }
-            else if (!isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars)) { /* live candle not touching zone */ }
-            else { Sell(false, ceiling); DrawSellSignal(); }
+            previousDXY   = dxyNow;
+            lastTradeDate = today;
+            Sell(false, ceiling); DrawSellSignal();
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
       {
-         double subCeiling = getConsolidationHigh(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
-         double ema50      = getEMAValue(50);
-         double vwap       = getVWAP();
-         if (subCeiling < 0 || !isSellBreakout(RangeBarsSubsequent, MinimumConsolidationBarsSubsequent))
-            { /* no breakout yet */ }
-         else if (iClose(_Symbol, PERIOD_CURRENT, 0) >= ema50 || iClose(_Symbol, PERIOD_CURRENT, 0) >= vwap)
-            { /* above EMA50/VWAP */ }
+         double dxyNow = getSyntheticDXYAtBar(0);
+         if (dxyNow <= previousDXY) { /* DXY not strengthening — skip subsequent sell */ }
          else
-            { Sell(true, subCeiling); DrawSellSignal(); }
+         {
+            previousDXY = dxyNow;
+            Sell(true, 0); DrawSellSignal();
+         }
       }
    }
 }
