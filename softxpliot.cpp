@@ -18,6 +18,7 @@ static datetime lastReversalBar         = 0;
 static datetime lastCloseBarTime        = 0;
 static double   profitAtLastEntry      = 0.0; // accountProfit when the last entry fired
 static double   peakGainSinceLastEntry = 0.0; // peak gain since that entry — next entry needs abs(stopLoss)
+static double   previousDXY           = 0.0;
 
 input double Money_FixLot_Lots                  = 0.01;
 input double stopLoss                           = -20.0;
@@ -31,9 +32,11 @@ input int    SwingStrength                      = 3;
 input int    MaxEntries                         = 5;
 input int    RangeBarsSubsequent                = 6;
 input int    MinimumConsolidationBarsSubsequent = 3;
-input double DXYDailyChangeThreshold           = 0.05; // percent — min DXY move to allow first entry
-input double RangeSwingTolerancePoints         = 300;  // max spread between swing H/H and L/L to call it a range
-input double TrailingSpeedFactor               = 1.0;  // >1 = slower trail (more room), <1 = tighter. e.g. 1.25 = 25% slower
+input double DXYDailyChangeThreshold           = 0.05;
+input double RangeSwingTolerancePoints         = 300;
+input double TrailingSpeedFactor               = 1.0;
+input int    SwingLookback                     = 50;   // bars to scan for macro swing high/low before consolidation
+input double MinimumDropPoints                 = 300;  // min drop/rally (points) from macro swing to zone
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -267,9 +270,15 @@ double getConsolidationLow(int startShift, int rangeBars, int minConBars)
    int    lowestLowIndex = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, rangeBars, startShift);
    double lowestLow      = iLow(_Symbol, PERIOD_CURRENT, lowestLowIndex);
 
-   double lastHL = getLastSwingLow();
-   if (lastHL > 0 && lowestLow <= lastHL)
-      return -1; // floor not above previous HL — not a genuine higher low
+   // Macro swing high must exist within SwingLookback bars above the zone
+   int    swingHighIndex = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, SwingLookback, startShift);
+   double swingHigh      = iHigh(_Symbol, PERIOD_CURRENT, swingHighIndex);
+
+   // Drop from swing high to zone floor must be large enough
+   if ((swingHigh - lowestLow) < MinimumDropPoints * _Point) return -1;
+
+   // Swing high must be older than the zone floor (price peaked first, then dropped)
+   if (swingHighIndex <= lowestLowIndex) return -1;
 
    double zoneTop = lowestLow + MaxLowRangePoints * _Point;
    int    count   = 0;
@@ -307,9 +316,15 @@ double getConsolidationHigh(int startShift, int rangeBars, int minConBars)
    int    highestHighIndex = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, rangeBars, startShift);
    double highestHigh      = iHigh(_Symbol, PERIOD_CURRENT, highestHighIndex);
 
-   double lastLH = getLastSwingHigh();
-   if (lastLH > 0 && highestHigh >= lastLH)
-      return -1; // ceiling not below previous LH — not a genuine lower high
+   // Macro swing low must exist within SwingLookback bars below the zone
+   int    swingLowIndex = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, SwingLookback, startShift);
+   double swingLow      = iLow(_Symbol, PERIOD_CURRENT, swingLowIndex);
+
+   // Rally from swing low to zone ceiling must be large enough
+   if ((highestHigh - swingLow) < MinimumDropPoints * _Point) return -1;
+
+   // Swing low must be older than the zone ceiling (price bottomed first, then rallied)
+   if (swingLowIndex <= highestHighIndex) return -1;
 
    double zoneBottom = highestHigh - MaxHighConsolidationPoints * _Point;
    int    count      = 0;
@@ -365,6 +380,16 @@ bool isSellBreakout(int rangeBars, int minConBars)
 }
 
 // ── Drawing ───────────────────────────────────────────────────────────────────
+
+
+void DrawReversalStopLine(double price)
+{
+   ObjectDelete(0, "ReversalStopLine");
+   ObjectCreate(0, "ReversalStopLine", OBJ_HLINE, 0, 0, price);
+   ObjectSetInteger(0, "ReversalStopLine", OBJPROP_COLOR, clrOrangeRed);
+   ObjectSetInteger(0, "ReversalStopLine", OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, "ReversalStopLine", OBJPROP_STYLE, STYLE_DASH);
+}
 
 void DrawTrailingStopLine(double price)
 {
@@ -514,6 +539,7 @@ void Buy(bool isSubsequent = false, double zoneFloor = 0.0)
       reversalThreshold        = 3;
       profitAtLastEntry        = AccountInfoDouble(ACCOUNT_PROFIT);
       peakGainSinceLastEntry   = 0.0;
+      DrawReversalStopLine(entryZoneFloor);
    }
 }
 
@@ -552,6 +578,7 @@ void Sell(bool isSubsequent = false, double zoneCeiling = 0.0)
       reversalThreshold        = 3;
       profitAtLastEntry        = AccountInfoDouble(ACCOUNT_PROFIT);
       peakGainSinceLastEntry   = 0.0;
+      DrawReversalStopLine(entryZoneCeiling);
    }
 }
 
@@ -583,6 +610,7 @@ void CloseAll()
    peakGainSinceLastEntry   = 0.0;
    lastCloseBarTime         = iTime(_Symbol, PERIOD_CURRENT, 0);
    ObjectDelete(0, "TrailingStopLine");
+   ObjectDelete(0, "ReversalStopLine");
 }
 
 // ── Entry logic ───────────────────────────────────────────────────────────────
@@ -602,6 +630,24 @@ void trade()
 
 
 
+   // ── 200-bar range context ─────────────────────────────────────────────────
+   double range200High = iHigh(_Symbol, PERIOD_CURRENT, iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, 200, 0));
+   double range200Low  = iLow(_Symbol,  PERIOD_CURRENT, iLowest(_Symbol,  PERIOD_CURRENT, MODE_LOW,  200, 0));
+   double range200Mid  = (range200High + range200Low) / 2.0;
+   double close0       = iClose(_Symbol, PERIOD_CURRENT, 0);
+   bool   inLowerHalf  = close0 < range200Mid;
+   bool   inUpperHalf  = close0 > range200Mid;
+
+   // ── DXY filter ───────────────────────────────────────────────────────────
+   double currentDXY     = getSyntheticDXYAtBar(0);
+   double yesterdayDXY   = getDXYDailyChangePct();
+   double dxyDailyChange = yesterdayDXY;
+   bool   dxyFalling     = (previousDXY > 0 && currentDXY < previousDXY);
+   bool   dxyRising      = (previousDXY > 0 && currentDXY > previousDXY);
+   bool   dxyWeakToday   = dxyDailyChange < -0.05;
+   bool   dxyStrongToday = dxyDailyChange >= -0.05;
+   previousDXY = currentDXY;
+
    // ── BUY ──────────────────────────────────────────────────────────────────
    if (!selling)
    {
@@ -610,24 +656,14 @@ void trade()
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else if (!inLowerHalf) { /* price not in lower half of 200-bar range — skip buy */ }
+         else if (!dxyWeakToday || !dxyFalling) { /* DXY not weak enough — skip buy */ }
          else
          {
             double floor = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
             if (floor < 0) { /* no consolidation yet */ }
-            //else if (isRangingMarket()) { /* ranging — skip */ }
-            else if (getDominantDirection(RangeBars) != 1) { /* dominant instrument not favouring buy */ }
-            else if (isSameDirection(RangeBars))
-            {
-               // Row 2: gold ↑ DXY ↑ — gold leading, enter at consolidation touch
-               if (isLowConsolidating(RangeBars, MinimumConsolidationBars))
-                  { Buy(false, floor); DrawBuySignal(); }
-            }
-            else
-            {
-               // Row 1: gold ↑ DXY ↓ — DXY driving, wait for breakout
-               if (isBuyBreakout(RangeBars, MinimumConsolidationBars))
-                  { Buy(false, floor); DrawBuySignal(); }
-            }
+            else if (!isLowConsolidating(RangeBars, MinimumConsolidationBars)) { /* live candle not touching zone */ }
+            else { Buy(false, floor); DrawBuySignal(); }
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
@@ -652,24 +688,14 @@ void trade()
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old — wait for fresh setup */ }
+         else if (!inUpperHalf) { /* price not in upper half of 200-bar range — skip sell */ }
+         else if (!dxyStrongToday || !dxyRising) { /* DXY not strong enough — skip sell */ }
          else
          {
             double ceiling = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
             if (ceiling < 0) { /* no consolidation yet */ }
-            //else if (isRangingMarket()) { /* ranging — skip */ }
-            else if (getDominantDirection(RangeBars) != -1) { /* dominant instrument not favouring sell */ }
-            else if (isSameDirection(RangeBars))
-            {
-               // Row 4: gold ↓ DXY ↓ — gold leading, enter at consolidation touch
-               if (isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars))
-                  { Sell(false, ceiling); DrawSellSignal(); }
-            }
-            else
-            {
-               // Row 3: gold ↓ DXY ↑ — DXY driving, wait for breakout
-               if (isSellBreakout(RangeBars, MinimumConsolidationBars))
-                  { Sell(false, ceiling); DrawSellSignal(); }
-            }
+            else if (!isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars)) { /* live candle not touching zone */ }
+            else { Sell(false, ceiling); DrawSellSignal(); }
          }
       }
       else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
@@ -694,7 +720,7 @@ void OnTick()
    if (shouldContinueTrading()) return;
 
    // ── Reversal candle check — only active before trailing kicks in ─────────
-   if (CountSymbolPositions() > 0 && !trailingActive)
+   if (CountSymbolPositions() > 1 && !trailingActive)
    {
       datetime lastBar = iTime(_Symbol, PERIOD_CURRENT, 1);
       if (lastBar != lastReversalBar)
