@@ -19,7 +19,9 @@ static datetime lastCloseBarTime        = 0;
 static double   profitAtLastEntry      = 0.0; // accountProfit when the last entry fired
 static double   peakGainSinceLastEntry = 0.0; // peak gain since that entry — next entry needs abs(stopLoss)
 static double   previousDXY           = 0.0;
+static double   previousXAU           = 0.0;
 static datetime lastTradeDate         = 0;
+
 
 input double Money_FixLot_Lots                  = 0.01;
 input double stopLoss                           = -20.0;
@@ -122,6 +124,25 @@ double getSyntheticDXYAtBar(int barShift)
       * MathPow(iClose("USDCHF", PERIOD_M1, barShift),  0.036);
 }
 
+// Returns XAUUSD daily change as a percentage vs yesterday's D1 close
+double getXAUDailyChangePct()
+{
+   double currentXAU   = iClose(_Symbol, PERIOD_CURRENT, 0);
+   double yesterdayXAU = iClose(_Symbol, PERIOD_D1, 1);
+   if (yesterdayXAU == 0) return 0;
+   return ((currentXAU - yesterdayXAU) / yesterdayXAU) * 100.0;
+}
+
+// Normalized momentum: (current - previous) / |previous|
+// Positive = strengthening vs previous, Negative = weakening.
+// Handles zero-previous and sign-flip safely.
+double normalizedMomentum(double current, double previous)
+{
+   if (MathAbs(previous) < 0.0001)
+      return (current > 0) ? 1.0 : (current < 0) ? -1.0 : 0.0;
+   return (current - previous) / MathAbs(previous);
+}
+
 // Returns DXY daily change as a percentage vs yesterday's D1 close
 double getDXYDailyChangePct()
 {
@@ -137,19 +158,32 @@ double getDXYDailyChangePct()
    return ((currentDXY - yesterdayDXY) / yesterdayDXY) * 100.0;
 }
 
-// Returns DXY momentum: positive = strengthening, negative = weakening.
-// First trade of the day: uses 100-bar rolling lookback.
-// Subsequent trades: compares current DXY vs value saved when last trade fired.
+// Returns DXY daily % change momentum.
+// First trade of the day: compares current daily % vs 100-bar-ago daily %.
+// Subsequent trades: compares current daily % vs value saved when last trade fired.
+// Positive = DXY strengthening, negative = DXY weakening.
 double getDXYTrend()
 {
-   double dxyNow = getSyntheticDXYAtBar(0);
+   double dxyPctNow = getDXYDailyChangePct();
    datetime today = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
    bool isFirstTradeOfDay = (lastTradeDate < today);
 
    if (isFirstTradeOfDay)
-      return dxyNow - getSyntheticDXYAtBar(100);
+   {
+      // Build daily % for the bar 100 bars ago
+      double dxy100     = getSyntheticDXYAtBar(100);
+      double dxyYest    = 50.14348112
+         * MathPow(iClose("EURUSD", PERIOD_D1, 1), -0.576)
+         * MathPow(iClose("USDJPY", PERIOD_D1, 1),  0.136)
+         * MathPow(iClose("GBPUSD", PERIOD_D1, 1), -0.119)
+         * MathPow(iClose("USDCAD", PERIOD_D1, 1),  0.091)
+         * MathPow(iClose("USDSEK", PERIOD_D1, 1),  0.042)
+         * MathPow(iClose("USDCHF", PERIOD_D1, 1),  0.036);
+      double dxyPct100 = (dxyYest > 0) ? ((dxy100 - dxyYest) / dxyYest) * 100.0 : 0;
+      return dxyPctNow - dxyPct100;
+   }
    else
-      return (previousDXY > 0) ? dxyNow - previousDXY : dxyNow - getSyntheticDXYAtBar(100);
+      return (previousDXY != 0) ? dxyPctNow - previousDXY : dxyPctNow;
 }
 
 // Compares XAUUSD and DXY % moves from the start of the consolidation to the current bar.
@@ -484,38 +518,60 @@ void DrawRangeLabel()
 
 void DrawBuySignal()
 {
+   double dxyNow    = getDXYDailyChangePct();
+   double xauNow    = getXAUDailyChangePct();
+   // Strong: gold ↑ + DXY ↓ (inverse relationship) → lime green
+   // Weak:   gold ↑ + DXY ↑ (gold leading)         → yellow
+   bool   strongBuy = (dxyNow < previousDXY);
+   color  arrowClr  = strongBuy ? clrLime   : clrYellow;
+   color  dxyClr    = strongBuy ? clrLime   : clrYellow;
+   color  xauClr    = strongBuy ? clrAqua   : clrYellow;
+
    string name = "BuySignal_" + IntegerToString(TimeCurrent());
    double price = iLow(_Symbol, PERIOD_CURRENT, 0) - 50 * _Point;
    ObjectCreate(0, name, OBJ_ARROW_UP, 0, TimeCurrent(), price);
-   ObjectSetInteger(0, name, OBJPROP_COLOR,     clrLime);
+   ObjectSetInteger(0, name, OBJPROP_COLOR,     arrowClr);
    ObjectSetInteger(0, name, OBJPROP_WIDTH,     2);
    ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 241);
 
-   string lblName = "BuyDXY_" + IntegerToString(TimeCurrent());
-   ObjectCreate(0, lblName, OBJ_TEXT, 0, TimeCurrent(), price - 80 * _Point);
-   ObjectSetString(0,  lblName, OBJPROP_TEXT,     "DXY: " + DoubleToString(getDXYDailyChangePct(), 4) + "%");
-   ObjectSetInteger(0, lblName, OBJPROP_COLOR,    clrLime);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 11);
-   ObjectSetString(0,  lblName, OBJPROP_FONT,     "Arial");
-   ObjectSetInteger(0, lblName, OBJPROP_ANCHOR,   ANCHOR_TOP);
+   string lbl = "BuyLbl_" + IntegerToString(TimeCurrent());
+   string lblText = "XAU " + DoubleToString(xauNow, 2) + " (" + DoubleToString(previousXAU, 2) + ")"
+                  + "  DXY " + DoubleToString(dxyNow, 2) + " (" + DoubleToString(previousDXY, 2) + ")";
+   ObjectCreate(0, lbl, OBJ_TEXT, 0, TimeCurrent(), price - 100 * _Point);
+   ObjectSetString(0,  lbl, OBJPROP_TEXT,     lblText);
+   ObjectSetInteger(0, lbl, OBJPROP_COLOR,    arrowClr);
+   ObjectSetInteger(0, lbl, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0,  lbl, OBJPROP_FONT,     "Arial");
+   ObjectSetInteger(0, lbl, OBJPROP_ANCHOR,   ANCHOR_TOP);
 }
 
 void DrawSellSignal()
 {
+   double dxyNow    = getDXYDailyChangePct();
+   double xauNow    = getXAUDailyChangePct();
+   // Strong: gold ↓ + DXY ↑ (inverse relationship) → red
+   // Weak:   gold ↓ + DXY ↓ (gold leading)         → orange
+   bool   strongSell = (dxyNow > previousDXY);
+   color  arrowClr   = strongSell ? clrRed    : clrOrange;
+   color  dxyClr     = strongSell ? clrRed    : clrOrange;
+   color  xauClr     = strongSell ? clrTomato : clrOrange;
+
    string name = "SellSignal_" + IntegerToString(TimeCurrent());
    double price = iHigh(_Symbol, PERIOD_CURRENT, 0) + 50 * _Point;
    ObjectCreate(0, name, OBJ_ARROW_DOWN, 0, TimeCurrent(), price);
-   ObjectSetInteger(0, name, OBJPROP_COLOR,     clrRed);
+   ObjectSetInteger(0, name, OBJPROP_COLOR,     arrowClr);
    ObjectSetInteger(0, name, OBJPROP_WIDTH,     2);
    ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 242);
 
-   string lblName = "SellDXY_" + IntegerToString(TimeCurrent());
-   ObjectCreate(0, lblName, OBJ_TEXT, 0, TimeCurrent(), price + 80 * _Point);
-   ObjectSetString(0,  lblName, OBJPROP_TEXT,     "DXY: " + DoubleToString(getDXYDailyChangePct(), 4) + "%");
-   ObjectSetInteger(0, lblName, OBJPROP_COLOR,    clrRed);
-   ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 11);
-   ObjectSetString(0,  lblName, OBJPROP_FONT,     "Arial");
-   ObjectSetInteger(0, lblName, OBJPROP_ANCHOR,   ANCHOR_BOTTOM);
+   string lbl = "SellLbl_" + IntegerToString(TimeCurrent());
+   string lblText = "XAU " + DoubleToString(xauNow, 2) + " (" + DoubleToString(previousXAU, 2) + ")"
+                  + "  DXY " + DoubleToString(dxyNow, 2) + " (" + DoubleToString(previousDXY, 2) + ")";
+   ObjectCreate(0, lbl, OBJ_TEXT, 0, TimeCurrent(), price + 100 * _Point);
+   ObjectSetString(0,  lbl, OBJPROP_TEXT,     lblText);
+   ObjectSetInteger(0, lbl, OBJPROP_COLOR,    arrowClr);
+   ObjectSetInteger(0, lbl, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0,  lbl, OBJPROP_FONT,     "Arial");
+   ObjectSetInteger(0, lbl, OBJPROP_ANCHOR,   ANCHOR_BOTTOM);
 }
 
 // ── Order execution ───────────────────────────────────────────────────────────
@@ -661,31 +717,41 @@ void trade()
       else if (posCount == 0)
       {
          datetime zoneStart  = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
-         double floor    = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
-         double dxyNow   = getSyntheticDXYAtBar(0);
-         double dxyTrend = getDXYTrend();
-         datetime today  = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
+         double floor      = getConsolidationLow(1, RangeBars, MinimumConsolidationBars);
+         double xauPctNow  = getXAUDailyChangePct();
+         double dxyNow     = getDXYDailyChangePct();
+         datetime today    = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
 
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old */ }
          else if (!inLowerHalf) { /* not in lower half */ }
          else if (floor < 0)    { /* no consolidation */ }
-         else if (dxyTrend >= 0) { /* DXY not weakening */ }
+         else if (normalizedMomentum(xauPctNow, previousXAU) <= normalizedMomentum(dxyNow, previousDXY)) { /* gold not outperforming DXY */ }
          else if (!isLowConsolidating(RangeBars, MinimumConsolidationBars)) { /* not touching zone */ }
          else
          {
+            DrawBuySignal();
             previousDXY   = dxyNow;
+            previousXAU   = xauPctNow;
             lastTradeDate = today;
-            Buy(false, floor); DrawBuySignal();
+            Buy(false, floor);
          }
       }
-      else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
+      else
       {
-         double dxyNow = getSyntheticDXYAtBar(0);
-         if (dxyNow >= previousDXY) { /* DXY not weakening — skip subsequent buy */ }
+         double subFloor  = getConsolidationLow(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
+         double xauPctNow = getXAUDailyChangePct();
+         double dxyNow    = getDXYDailyChangePct();
+
+         if (peakGainSinceLastEntry < MathAbs(stopLoss)) { /* gain not yet $20 at this bar */ }
+         else if (subFloor < 0) { /* no consolidation yet */ }
+         else if (!isLowConsolidating(RangeBarsSubsequent, MinimumConsolidationBarsSubsequent)) { /* not touching zone */ }
+         else if (normalizedMomentum(xauPctNow, previousXAU) <= normalizedMomentum(dxyNow, previousDXY)) { /* gold not outperforming DXY */ }
          else
          {
+            DrawBuySignal();
             previousDXY = dxyNow;
-            Buy(true, 0); DrawBuySignal();
+            previousXAU = xauPctNow;
+            Buy(true, subFloor);
          }
       }
    }
@@ -698,30 +764,40 @@ void trade()
       {
          datetime zoneStart = iTime(_Symbol, PERIOD_CURRENT, 1 + RangeBars);
          double   ceiling   = getConsolidationHigh(1, RangeBars, MinimumConsolidationBars);
-         double   dxyNow    = getSyntheticDXYAtBar(0);
-         double   dxyTrend  = getDXYTrend();
+         double   xauPctNow = getXAUDailyChangePct();
+         double   dxyNow    = getDXYDailyChangePct();
          datetime today     = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
 
          if (lastCloseBarTime > 0 && zoneStart <= lastCloseBarTime) { /* zone too old */ }
          else if (!inUpperHalf)  { /* not in upper half */ }
          else if (ceiling < 0)   { /* no consolidation */ }
-         else if (dxyTrend <= 0) { /* DXY not strengthening */ }
+         else if (normalizedMomentum(dxyNow, previousDXY) <= normalizedMomentum(xauPctNow, previousXAU)) { /* DXY not outperforming gold */ }
          else if (!isHighConsolidatingEntry(RangeBars, MinimumConsolidationBars)) { /* not touching zone */ }
          else
          {
+            DrawSellSignal();
             previousDXY   = dxyNow;
+            previousXAU   = xauPctNow;
             lastTradeDate = today;
-            Sell(false, ceiling); DrawSellSignal();
+            Sell(false, ceiling);
          }
       }
-      else if (peakGainSinceLastEntry >= MathAbs(stopLoss))
+      else
       {
-         double dxyNow = getSyntheticDXYAtBar(0);
-         if (dxyNow <= previousDXY) { /* DXY not strengthening — skip subsequent sell */ }
+         double subCeiling = getConsolidationHigh(1, RangeBarsSubsequent, MinimumConsolidationBarsSubsequent);
+         double xauPctNow  = getXAUDailyChangePct();
+         double dxyNow     = getDXYDailyChangePct();
+
+         if (peakGainSinceLastEntry < MathAbs(stopLoss)) { /* gain not yet $20 at this bar */ }
+         else if (subCeiling < 0) { /* no consolidation yet */ }
+         else if (!isHighConsolidatingEntry(RangeBarsSubsequent, MinimumConsolidationBarsSubsequent)) { /* not touching zone */ }
+         else if (normalizedMomentum(dxyNow, previousDXY) <= normalizedMomentum(xauPctNow, previousXAU)) { /* DXY not outperforming gold */ }
          else
          {
+            DrawSellSignal();
             previousDXY = dxyNow;
-            Sell(true, 0); DrawSellSignal();
+            previousXAU = xauPctNow;
+            Sell(true, subCeiling);
          }
       }
    }
