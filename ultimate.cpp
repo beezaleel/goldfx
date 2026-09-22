@@ -32,30 +32,30 @@ static double   exitZoneHigh      = 0;
 static double   exitZoneLow       = 0;
 static int      exitWatchBars     = 0;
 
-// Running consolidation state — updated bar by bar as price forms
-static double   sellCeiling           = 0;
-static double   sellCeilingAnchor     = 0;
-static datetime sellCeilingAnchorTime = 0;
-static int      sellHugCount          = 0;
-static double   sellConsolidationLow  = DBL_MAX; // min low seen during sell consolidation
 static double   lastConfirmedSellCeiling = 0;    // ceiling of the most recently confirmed SELL zone
 static datetime lastConfirmedSellTime    = 0;
 static double   lastConfirmedBuyFloor    = 0;    // floor of the most recently confirmed BUY zone
 static datetime lastConfirmedBuyTime     = 0;
-static double   buyFloor              = 0;
-static double   buyFloorAnchor        = 0;
-static datetime buyFloorAnchorTime    = 0;
-static int      buyHugCount           = 0;
-static double   buyConsolidationHigh  = -DBL_MAX; // max high seen during buy consolidation
+
+// ── Higher-low / lower-high reference tracking ────────────────────────────
+static double   refBuyFloor        = 0;          // lowest BUY floor seen (reference for higher-low)
+static datetime refBuyFloorTime    = 0;
+static double   refSellCeiling     = 0;          // highest SELL ceiling seen (reference for lower-high)
+static datetime refSellCeilingTime = 0;
 
 // ── Inputs ────────────────────────────────────────────────────────────────────
 input double Money_FixLot_Lots          = 0.05;
-input int    MinConsolidationBars       = 7;    // minimum candles required
-input double ConsolidationSpreadDollars = 4.0;  // max spread of highs (SELL) or lows (BUY) in $ (e.g. $2 on XAUUSD M1)
+input int    MinConsolidationBars       = 7;    // minimum candles that must touch the floor/ceiling (reference scan)
+input int    ConsolidationWindowBars    = 20;   // sliding window size for reference scan
+input double ConsolidationSpreadDollars = 4.0;  // max spread of highs (SELL) or lows (BUY) in $
+input int    HigherLowRangePips         = 150;  // total height of the valid entry range rectangle (pips)
+input int    RangeUpperPct              = 70;   // % of range above BUY floor (below SELL ceiling gets the rest)
+input int    TriggerMinBars             = 3;    // min bars touching for the actual entry trigger scan
+input int    TriggerWindowBars          = 6;    // window size for entry trigger scan
 input double ZoneWidthDollars           = 10.0; // height of the armed zone in $ (e.g. $10 on XAUUSD)
 input int    FastMAPeriod               = 20;   // fast MA period for trend direction
 input int    SlowMAPeriod               = 100;  // slow MA period for trend direction
-input double MinTrendSpreadDollars      = 1.6;  // minimum MA gap in $ to confirm a real trend
+input double MinTrendSpreadDollars      = 0.6;  // minimum MA gap in $ to confirm a real trend
 input int    EntryWindowBars            = 10;   // bars to wait for price to revisit trigger
 input double StopLossDollars            = 30.0;
 input double TakeProfitDollars          = 250.0;
@@ -66,7 +66,9 @@ input int    MaxEntriesPerZone          = 1;   // max trades allowed per confirm
 input int    MaxConsecutiveLosses       = 3;
 input double PrevZoneTolerance          = 5.0;  // current zone must be within $X of a previous consolidation level
 input int    PrevZoneLookback           = 100;  // bars to scan for previous consolidation
-input bool   EnableConsolidationTrades  = true; // set true to re-enable consolidation trades alongside trending
+input bool   EnableConsolidationTrades  = true;
+input bool   EnableTrendingTrades       = false;
+input bool   EnableEarlyExit            = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +87,11 @@ double DollarsToPriceDist(double dollars)
    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    if (tickValue == 0 || tickSize == 0) return 0;
    return dollars / (Money_FixLot_Lots * (tickValue / tickSize));
+}
+
+double PipsToPriceDist(int pips)
+{
+   return pips * _Point * 10.0;
 }
 
 double CalcSMA(int period, int shift)
@@ -146,193 +153,167 @@ double FindPreviousConsolidationLevel(bool isSell, int startBar, int lookback, d
    return 0;
 }
 
-// Called on every new bar. Updates the running consolidation trackers using
-// bar 1 (the just-completed candle). Returns:
-//  -1 if a SELL ceiling just reached MinConsolidationBars
-//   1 if a BUY floor just reached MinConsolidationBars
-//   0 if no zone is confirmed yet
+// Called on every new bar. Scans the last ConsolidationWindowBars bars (sliding window)
+// and counts how many bars touch the floor/ceiling within ConsolidationSpreadDollars.
+// A zone is confirmed when >= MinConsolidationBars bars touch the level, regardless of
+// whether intervening bars also touch it (gaps allowed). Returns:
+//  -1 if a SELL zone is confirmed
+//   1 if a BUY  zone is confirmed
+//   0 if no zone confirmed yet
 int UpdateConsolidation(double &outCeiling, double &outFloor, double &outConsolidationLow, double &outConsolidationHigh)
 {
-   double tol      = ConsolidationSpreadDollars;
-   double bar1High = iHigh(_Symbol, _Period, 1);
-   double bar1Low  = iLow (_Symbol, _Period, 1);
+   double   tolDist = DollarsToPriceDist(ConsolidationSpreadDollars);
+   int      window  = ConsolidationWindowBars;
 
-   datetime bar1Time = iTime(_Symbol, _Period, 1);
+   // ── SELL: find max high in window, count bars whose high touches it ───────
+   double sellCeil = -DBL_MAX;
+   for (int i = 1; i <= window; i++)
+      sellCeil = MathMax(sellCeil, iHigh(_Symbol, _Period, i));
 
-   // ── SELL ceiling tracker ──────────────────────────────────────────────────
-   if (sellCeiling == 0 || bar1High > sellCeiling + tol)
+   int      sellCount      = 0;
+   datetime sellAnchorTime = 0;  // oldest touching bar's time
+   double   sellConsLow    = DBL_MAX;
+   for (int i = window; i >= 1; i--)
    {
-      sellCeiling           = bar1High;
-      sellCeilingAnchor     = bar1High;
-      sellCeilingAnchorTime = bar1Time;
-      sellHugCount          = 1;
-      sellConsolidationLow  = bar1Low;
-   }
-   else if (bar1High >= sellCeiling - tol)
-   {
-      if (bar1High > sellCeiling) sellCeiling = bar1High;
-      if (bar1Low < sellConsolidationLow) sellConsolidationLow = bar1Low;
-      sellHugCount++;
-   }
-   else
-   {
-      sellCeiling           = 0;
-      sellCeilingAnchor     = 0;
-      sellCeilingAnchorTime = 0;
-      sellHugCount          = 0;
-      sellConsolidationLow  = DBL_MAX;
+      if (iHigh(_Symbol, _Period, i) >= sellCeil - tolDist)
+      {
+         sellCount++;
+         if (sellAnchorTime == 0) sellAnchorTime = iTime(_Symbol, _Period, i);
+         double lo = iLow(_Symbol, _Period, i);
+         if (lo < sellConsLow) sellConsLow = lo;
+      }
    }
 
-   // ── BUY floor tracker ─────────────────────────────────────────────────────
-   if (buyFloor == 0 || bar1Low < buyFloor - tol)
+   // ── BUY: find min low in window, count bars whose low touches it ──────────
+   double buyFlr = DBL_MAX;
+   for (int i = 1; i <= window; i++)
+      buyFlr = MathMin(buyFlr, iLow(_Symbol, _Period, i));
+
+   int      buyCount       = 0;
+   datetime buyAnchorTime  = 0;  // oldest touching bar's time
+   double   buyConsHigh    = -DBL_MAX;
+   for (int i = window; i >= 1; i--)
    {
-      buyFloor             = bar1Low;
-      buyFloorAnchor       = bar1Low;
-      buyFloorAnchorTime   = bar1Time;
-      buyHugCount          = 1;
-      buyConsolidationHigh = bar1High;
-   }
-   else if (bar1Low <= buyFloor + tol)
-   {
-      if (bar1Low < buyFloor) buyFloor = bar1Low;
-      if (bar1High > buyConsolidationHigh) buyConsolidationHigh = bar1High;
-      buyHugCount++;
-   }
-   else
-   {
-      buyFloor             = 0;
-      buyFloorAnchor       = 0;
-      buyFloorAnchorTime   = 0;
-      buyHugCount          = 0;
-      buyConsolidationHigh = -DBL_MAX;
+      if (iLow(_Symbol, _Period, i) <= buyFlr + tolDist)
+      {
+         buyCount++;
+         if (buyAnchorTime == 0) buyAnchorTime = iTime(_Symbol, _Period, i);
+         double hi = iHigh(_Symbol, _Period, i);
+         if (hi > buyConsHigh) buyConsHigh = hi;
+      }
    }
 
-   Print("Consolidation: sellCeiling=", sellCeiling, " sellCount=", sellHugCount,
-         " | buyFloor=", buyFloor, " buyCount=", buyHugCount);
+   Print("Consolidation: sellCeil=", DoubleToString(sellCeil, _Digits), " sellCount=", sellCount,
+         "/", window, " | buyFloor=", DoubleToString(buyFlr, _Digits), " buyCount=", buyCount, "/", window);
 
-   // ── Check if a zone just crossed the threshold ────────────────────────────
-   double fastMA = CalcSMA(FastMAPeriod, 1);
-   double slowMA = CalcSMA(SlowMAPeriod, 1);
-
+   double fastMA    = CalcSMA(FastMAPeriod, 1);
+   double slowMA    = CalcSMA(SlowMAPeriod, 1);
    double minSpread = MinTrendSpreadDollars;
+   double prevTolDist = DollarsToPriceDist(PrevZoneTolerance);
 
-   // SELL: uptrend (fastMA > slowMA) with sufficient spread, AND ceiling is ABOVE the fast MA
-   // — price has risen to an elevated level, not just clustering in the middle of a flat range.
-   if (sellHugCount >= MinConsolidationBars && fastMA > slowMA + minSpread && sellCeiling > fastMA
-       && sellCeiling <= sellCeilingAnchor + tol)
+   // ── SELL zone check ───────────────────────────────────────────────────────
+   if (sellCount >= MinConsolidationBars && fastMA > slowMA + minSpread && sellCeil > fastMA)
    {
-      // Require current ceiling to be near a previous consolidation ceiling
-      // Use last confirmed SELL zone as previous level if within PrevZoneLookback bars, else scan candles
-      double   prevLevel   = 0;
-      datetime prevTime    = 0;
-      double   prevTolDist = DollarsToPriceDist(PrevZoneTolerance);
-      if (lastConfirmedSellCeiling > 0)
+      // Suppress re-fire while the same ceiling is still in the window
+      if (lastConfirmedSellCeiling > 0 && MathAbs(sellCeil - lastConfirmedSellCeiling) <= tolDist)
       {
-         int barsAgo = iBarShift(_Symbol, _Period, lastConfirmedSellTime, false);
-         if (barsAgo >= 0 && barsAgo <= PrevZoneLookback)
-         {
-            prevLevel = lastConfirmedSellCeiling;
-            prevTime  = lastConfirmedSellTime;
-         }
-         else
-         {
-            lastConfirmedSellCeiling = 0;
-            lastConfirmedSellTime    = 0;
-         }
-      }
-      if (prevLevel == 0)
-      {
-         int startBar = sellHugCount + 1;
-         prevLevel = FindPreviousConsolidationLevel(true, startBar, PrevZoneLookback, prevTime);
-      }
-
-      if (prevLevel > 0 && sellCeiling < prevLevel - prevTolDist)
-      {
-         Print("SELL reject (prev zone): ceiling=", sellCeiling, " prevLevel=", prevLevel,
-               " gap=", DoubleToString((prevLevel - sellCeiling) / _Point * _Point * 100, 2), "$");
+         Print("SELL suppress: ceiling matches last confirmed (", DoubleToString(lastConfirmedSellCeiling, _Digits), ")");
       }
       else
       {
-         outCeiling          = sellCeiling;
-         outFloor            = sellCeiling - DollarsToPriceDist(ZoneWidthDollars);
-         outConsolidationLow = sellConsolidationLow;
-         Print("SELL zone confirmed: hugCount=", sellHugCount, " ceiling=", sellCeiling,
-               " prevLevel=", prevLevel,
-               " anchor=", sellCeilingAnchor, " drift=", (sellCeiling - sellCeilingAnchor) / _Point,
-               "pts fastMA=", fastMA, " slowMA=", slowMA, " spread=", (fastMA - slowMA) / _Point, "pts");
-         DrawConsolidationMark(sellCeilingAnchorTime, sellCeilingAnchor, true, true);
-         if (prevLevel > 0 && prevTime > 0)
-            DrawPrevZoneLine(prevTime, prevLevel, sellCeilingAnchorTime, sellCeiling, true);
-         lastConfirmedSellCeiling = sellCeiling;
-         lastConfirmedSellTime    = sellCeilingAnchorTime;
-         sellHugCount = 0; sellCeiling = 0; sellCeilingAnchor = 0; sellCeilingAnchorTime = 0; sellConsolidationLow = DBL_MAX;
-         buyHugCount  = 0; buyFloor    = 0; buyFloorAnchor    = 0; buyFloorAnchorTime    = 0; buyConsolidationHigh = -DBL_MAX;
-         return -1;
-      }
-   }
-   else if (sellHugCount >= MinConsolidationBars)
-      Print("SELL reject: ceiling=", sellCeiling, " anchor=", sellCeilingAnchor,
-            " drift=", (sellCeiling - sellCeilingAnchor) / _Point, "pts fastMA=", fastMA,
-            " slowMA=", slowMA, " spread=", (fastMA - slowMA) / _Point, "pts (need ceiling>fastMA>slowMA+minSpread, drift<=", ConsolidationSpreadDollars, ")");
-
-   // BUY: downtrend (fastMA < slowMA) with sufficient spread, AND floor is BELOW the fast MA
-   // — price has dropped to a depressed level, not just flat mid-range.
-   if (buyHugCount >= MinConsolidationBars && fastMA < slowMA - minSpread && buyFloor < fastMA
-       && buyFloor >= buyFloorAnchor - tol)
-   {
-      // Require current floor to be near a previous consolidation floor
-      // Use last confirmed BUY zone as previous level if within PrevZoneLookback bars, else scan candles
-      double   prevLevel   = 0;
-      datetime prevTime    = 0;
-      double   prevTolDist = DollarsToPriceDist(PrevZoneTolerance);
-      if (lastConfirmedBuyFloor > 0)
-      {
-         int barsAgo = iBarShift(_Symbol, _Period, lastConfirmedBuyTime, false);
-         if (barsAgo >= 0 && barsAgo <= PrevZoneLookback)
+         double   prevLevel = 0;
+         datetime prevTime  = 0;
+         if (lastConfirmedSellCeiling > 0)
          {
-            prevLevel = lastConfirmedBuyFloor;
-            prevTime  = lastConfirmedBuyTime;
+            int barsAgo = iBarShift(_Symbol, _Period, lastConfirmedSellTime, false);
+            if (barsAgo >= 0 && barsAgo <= PrevZoneLookback)
+               { prevLevel = lastConfirmedSellCeiling; prevTime = lastConfirmedSellTime; }
+            else
+               { lastConfirmedSellCeiling = 0; lastConfirmedSellTime = 0; }
+         }
+         if (prevLevel == 0)
+            prevLevel = FindPreviousConsolidationLevel(true, window + 1, PrevZoneLookback, prevTime);
+
+         if (prevLevel > 0 && sellCeil < prevLevel - prevTolDist)
+         {
+            Print("SELL reject (prev zone): ceiling=", DoubleToString(sellCeil, _Digits),
+                  " prevLevel=", DoubleToString(prevLevel, _Digits));
          }
          else
          {
-            lastConfirmedBuyFloor = 0;
-            lastConfirmedBuyTime  = 0;
+            outCeiling          = sellCeil;
+            outFloor            = sellCeil - DollarsToPriceDist(ZoneWidthDollars);
+            outConsolidationLow = sellConsLow;
+            Print("SELL zone confirmed: count=", sellCount, "/", window,
+                  " ceiling=", DoubleToString(sellCeil, _Digits),
+                  " prevLevel=", DoubleToString(prevLevel, _Digits),
+                  " fastMA=", DoubleToString(fastMA, _Digits),
+                  " slowMA=", DoubleToString(slowMA, _Digits));
+            DrawConsolidationMark(sellAnchorTime, sellCeil, true, true);
+            if (prevLevel > 0 && prevTime > 0)
+               DrawPrevZoneLine(prevTime, prevLevel, sellAnchorTime, sellCeil, true);
+            lastConfirmedSellCeiling = sellCeil;
+            lastConfirmedSellTime    = sellAnchorTime;
+            return -1;
          }
       }
-      if (prevLevel == 0)
-      {
-         int startBar = buyHugCount + 1;
-         prevLevel = FindPreviousConsolidationLevel(false, startBar, PrevZoneLookback, prevTime);
-      }
+   }
+   else if (sellCount >= MinConsolidationBars)
+      Print("SELL reject: count=", sellCount, " ceiling=", DoubleToString(sellCeil, _Digits),
+            " fastMA=", DoubleToString(fastMA, _Digits), " slowMA=", DoubleToString(slowMA, _Digits),
+            " (need ceiling>fastMA>slowMA+", MinTrendSpreadDollars, ")");
 
-      if (prevLevel > 0 && buyFloor > prevLevel + prevTolDist)
+   // ── BUY zone check ────────────────────────────────────────────────────────
+   if (buyCount >= MinConsolidationBars && fastMA < slowMA - minSpread && buyFlr < fastMA)
+   {
+      // Suppress re-fire while the same floor is still in the window
+      if (lastConfirmedBuyFloor > 0 && MathAbs(buyFlr - lastConfirmedBuyFloor) <= tolDist)
       {
-         Print("BUY reject (prev zone): floor=", buyFloor, " prevLevel=", prevLevel,
-               " gap=", DoubleToString((buyFloor - prevLevel) / _Point * _Point * 100, 2), "$");
+         Print("BUY suppress: floor matches last confirmed (", DoubleToString(lastConfirmedBuyFloor, _Digits), ")");
       }
       else
       {
-         outCeiling           = buyFloor + DollarsToPriceDist(ZoneWidthDollars);
-         outFloor             = buyFloor;
-         outConsolidationHigh = buyConsolidationHigh;
-         Print("BUY zone confirmed: hugCount=", buyHugCount, " floor=", buyFloor,
-               " prevLevel=", prevLevel,
-               " anchor=", buyFloorAnchor, " drift=", (buyFloorAnchor - buyFloor) / _Point,
-               "pts fastMA=", fastMA, " slowMA=", slowMA, " spread=", (slowMA - fastMA) / _Point, "pts");
-         DrawConsolidationMark(buyFloorAnchorTime, buyFloorAnchor, true, false);
-         if (prevLevel > 0 && prevTime > 0)
-            DrawPrevZoneLine(prevTime, prevLevel, buyFloorAnchorTime, buyFloor, false);
-         lastConfirmedBuyFloor = buyFloor;
-         lastConfirmedBuyTime  = buyFloorAnchorTime;
-         buyHugCount  = 0; buyFloor    = 0; buyFloorAnchor    = 0; buyFloorAnchorTime    = 0; buyConsolidationHigh = -DBL_MAX;
-         sellHugCount = 0; sellCeiling = 0; sellCeilingAnchor = 0; sellCeilingAnchorTime = 0; sellConsolidationLow = DBL_MAX;
-         return 1;
+         double   prevLevel = 0;
+         datetime prevTime  = 0;
+         if (lastConfirmedBuyFloor > 0)
+         {
+            int barsAgo = iBarShift(_Symbol, _Period, lastConfirmedBuyTime, false);
+            if (barsAgo >= 0 && barsAgo <= PrevZoneLookback)
+               { prevLevel = lastConfirmedBuyFloor; prevTime = lastConfirmedBuyTime; }
+            else
+               { lastConfirmedBuyFloor = 0; lastConfirmedBuyTime = 0; }
+         }
+         if (prevLevel == 0)
+            prevLevel = FindPreviousConsolidationLevel(false, window + 1, PrevZoneLookback, prevTime);
+
+         if (prevLevel > 0 && buyFlr > prevLevel + prevTolDist)
+         {
+            Print("BUY reject (prev zone): floor=", DoubleToString(buyFlr, _Digits),
+                  " prevLevel=", DoubleToString(prevLevel, _Digits));
+         }
+         else
+         {
+            outCeiling           = buyFlr + DollarsToPriceDist(ZoneWidthDollars);
+            outFloor             = buyFlr;
+            outConsolidationHigh = buyConsHigh;
+            Print("BUY zone confirmed: count=", buyCount, "/", window,
+                  " floor=", DoubleToString(buyFlr, _Digits),
+                  " prevLevel=", DoubleToString(prevLevel, _Digits),
+                  " fastMA=", DoubleToString(fastMA, _Digits),
+                  " slowMA=", DoubleToString(slowMA, _Digits));
+            DrawConsolidationMark(buyAnchorTime, buyFlr, true, false);
+            if (prevLevel > 0 && prevTime > 0)
+               DrawPrevZoneLine(prevTime, prevLevel, buyAnchorTime, buyFlr, false);
+            lastConfirmedBuyFloor = buyFlr;
+            lastConfirmedBuyTime  = buyAnchorTime;
+            return 1;
+         }
       }
    }
-   else if (buyHugCount >= MinConsolidationBars)
-      Print("BUY reject: floor=", buyFloor, " anchor=", buyFloorAnchor,
-            " drift=", (buyFloorAnchor - buyFloor) / _Point, "pts fastMA=", fastMA,
-            " slowMA=", slowMA, " spread=", (slowMA - fastMA) / _Point, "pts (need floor<fastMA<slowMA-minSpread, drift<=", ConsolidationSpreadDollars, ")");
+   else if (buyCount >= MinConsolidationBars)
+      Print("BUY reject: count=", buyCount, " floor=", DoubleToString(buyFlr, _Digits),
+            " fastMA=", DoubleToString(fastMA, _Digits), " slowMA=", DoubleToString(slowMA, _Digits),
+            " (need floor<fastMA<slowMA-", MinTrendSpreadDollars, ")");
 
    return 0;
 }
@@ -370,6 +351,130 @@ void DrawZone(double hi, double lo)
    ObjectCreate(0, "AlphaZoneLow", OBJ_HLINE, 0, 0, lo);
    ObjectSetInteger(0, "AlphaZoneLow", OBJPROP_COLOR, clrSilver);
    ObjectSetInteger(0, "AlphaZoneLow", OBJPROP_STYLE, STYLE_DASH);
+}
+
+void DrawRangeRect(double lo, double hi, bool isSell)
+{
+   string   name = isSell ? "AlphaSellRange" : "AlphaBuyRange";
+   datetime t1   = iTime(_Symbol, _Period, ConsolidationWindowBars + 10);
+   datetime t2   = iTime(_Symbol, _Period, 0) + (datetime)(PeriodSeconds(_Period) * 60);
+   color    clr  = isSell ? C'80,30,30' : C'20,60,20';
+
+   if (ObjectFind(0, name) >= 0)
+      ObjectDelete(0, name);
+
+   ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, hi, t2, lo);
+   ObjectSetInteger(0, name, OBJPROP_COLOR,      clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE,      STYLE_DASH);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH,      1);
+   ObjectSetInteger(0, name, OBJPROP_BACK,       true);
+   ObjectSetInteger(0, name, OBJPROP_FILL,       true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ChartRedraw(0);
+}
+
+void ClearRangeRect(bool isSell)
+{
+   ObjectDelete(0, isSell ? "AlphaSellRange" : "AlphaBuyRange");
+   ChartRedraw(0);
+}
+
+// Scans last TriggerWindowBars for a consolidation inside [rangeLo, rangeHi].
+// Returns the detected floor (BUY) or ceiling (SELL), or 0 if not found.
+// Checks for a 3-candle "three steps" pattern inside the range.
+// BUY:  >= 2 of 3 bars bullish, EMA50 within combined range of all 3 bars, pattern within rectangle.
+// SELL: >= 2 of 3 bars bearish, EMA50 within combined range of all 3 bars, pattern within rectangle.
+// Returns the trigger level (BUY: lowest low of the 3 bars; SELL: highest high) or 0.
+double CheckThreeStepPattern(bool isSell, double rangeLo, double rangeHi)
+{
+   static int h50 = INVALID_HANDLE;
+   if (h50 == INVALID_HANDLE)
+      h50 = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
+   if (h50 == INVALID_HANDLE) return 0;
+
+   double ema50[3];
+   if (CopyBuffer(h50, 0, 1, 3, ema50) < 3) return 0;
+   // ema50[0]=bar1, ema50[1]=bar2, ema50[2]=bar3
+
+   int    dirCount  = 0;
+   double level     = isSell ? -DBL_MAX : DBL_MAX;
+   double rangeHigh = -DBL_MAX; // combined high of all 3 bars
+   double rangeLow  =  DBL_MAX; // combined low  of all 3 bars
+
+   for (int i = 1; i <= 3; i++)
+   {
+      double o  = iOpen (_Symbol, _Period, i);
+      double c  = iClose(_Symbol, _Period, i);
+      double hi = iHigh (_Symbol, _Period, i);
+      double lo = iLow  (_Symbol, _Period, i);
+
+      if (!isSell && c > o) dirCount++;
+      if ( isSell && c < o) dirCount++;
+
+      rangeHigh = MathMax(rangeHigh, hi);
+      rangeLow  = MathMin(rangeLow,  lo);
+
+      if (!isSell) level = MathMin(level, lo);
+      else         level = MathMax(level, hi);
+   }
+
+   // EMA50 must pass through the combined price range of the 3 candles
+   double ema50Avg = (ema50[0] + ema50[1] + ema50[2]) / 3.0;
+   bool   ema50Cross = (ema50Avg >= rangeLow && ema50Avg <= rangeHigh);
+
+   if (dirCount < 2 || !ema50Cross) return 0;
+   if (level < rangeLo || level > rangeHi) return 0;
+
+   Print("THREE_STEP_", (isSell ? "SELL" : "BUY"), ": dirCount=", dirCount,
+         " ema50Cross=true level=", DoubleToString(level, _Digits),
+         " range=[", DoubleToString(rangeLo, _Digits), ",", DoubleToString(rangeHi, _Digits), "]");
+   return level;
+}
+
+double CheckTriggerConsolidation(bool isSell, double rangeLo, double rangeHi)
+{
+   double tolDist = DollarsToPriceDist(ConsolidationSpreadDollars);
+   int    window  = TriggerWindowBars;
+
+   if (isSell)
+   {
+      double ceil = -DBL_MAX;
+      for (int i = 1; i <= window; i++)
+         ceil = MathMax(ceil, iHigh(_Symbol, _Period, i));
+
+      if (ceil < rangeLo || ceil > rangeHi) return 0;
+
+      int count = 0;
+      for (int i = 1; i <= window; i++)
+         if (iHigh(_Symbol, _Period, i) >= ceil - tolDist) count++;
+
+      if (count >= TriggerMinBars)
+      {
+         Print("TRIGGER_SELL: count=", count, "/", window, " ceil=", DoubleToString(ceil, _Digits),
+               " range=[", DoubleToString(rangeLo, _Digits), ",", DoubleToString(rangeHi, _Digits), "]");
+         return ceil;
+      }
+   }
+   else
+   {
+      double flr = DBL_MAX;
+      for (int i = 1; i <= window; i++)
+         flr = MathMin(flr, iLow(_Symbol, _Period, i));
+
+      if (flr < rangeLo || flr > rangeHi) return 0;
+
+      int count = 0;
+      for (int i = 1; i <= window; i++)
+         if (iLow(_Symbol, _Period, i) <= flr + tolDist) count++;
+
+      if (count >= TriggerMinBars)
+      {
+         Print("TRIGGER_BUY: count=", count, "/", window, " floor=", DoubleToString(flr, _Digits),
+               " range=[", DoubleToString(rangeLo, _Digits), ",", DoubleToString(rangeHi, _Digits), "]");
+         return flr;
+      }
+   }
+   return 0;
 }
 
 void DrawEntry(bool isBuy)
@@ -428,6 +533,8 @@ void CleanupLines()
    ObjectDelete(0, "AlphaZoneHigh");
    ObjectDelete(0, "AlphaZoneLow");
    ObjectDelete(0, "AlphaBreakEven");
+   ObjectDelete(0, "AlphaBuyRange");
+   ObjectDelete(0, "AlphaSellRange");
 }
 
 // ── Trending setup detector ───────────────────────────────────────────────────
@@ -679,8 +786,10 @@ void ResetAll()
    exitCooldownBars = 0;
    isFlipTrade      = false;
    isTrendingTrade  = false;
-   sellCeiling      = 0;  sellHugCount = 0;  sellConsolidationLow  = DBL_MAX;
-   buyFloor         = 0;  buyHugCount  = 0;  buyConsolidationHigh  = -DBL_MAX;
+   refBuyFloor        = 0; refBuyFloorTime    = 0;
+   refSellCeiling     = 0; refSellCeilingTime = 0;
+   ClearRangeRect(false);
+   ClearRangeRect(true);
    exitPendingDir   = 0;
    exitZoneHigh     = 0;
    exitZoneLow      = 0;
@@ -758,6 +867,61 @@ void OnTick()
                        : openPrice - trailingSL;
             }
             MoveSLToPrice(newSL);
+         }
+      }
+   }
+
+   // ── Tick-level: anchor touch entry ────────────────────────────────────────
+   // Runs on every tick so the entry fires the moment price reaches the anchor,
+   // guaranteeing entry at the ceiling (SELL) or floor (BUY), not bar-close price.
+   // Also runs when in a trending trade so a consolidation entry can close it.
+   if ((!inTrade || isTrendingTrade) && pendingDir == 0)
+   {
+      double rangeDist = PipsToPriceDist(HigherLowRangePips);
+      double pct       = MathMax(1, MathMin(99, RangeUpperPct)) / 100.0;
+
+      if (refSellCeiling > 0)
+      {
+         double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double rectHi = refSellCeiling + rangeDist * (1.0 - pct);
+         if (bid >= refSellCeiling && bid <= rectHi)
+         {
+            Print("SELL_ANCHOR_TICK: bid=", DoubleToString(bid, _Digits),
+                  " ceiling=", DoubleToString(refSellCeiling, _Digits));
+            if (inTrade && isTrendingTrade)
+               for (int i = PositionsTotal() - 1; i >= 0; i--)
+               { ulong t = PositionGetTicket(i);
+                 if (t && PositionGetString(POSITION_SYMBOL) == _Symbol &&
+                     PositionGetInteger(POSITION_MAGIC) == magicNumber)
+                    trade.PositionClose(t); }
+            isFlipTrade = false; isTrendingTrade = false;
+            refBuyFloor = 0; refBuyFloorTime = 0;
+            refSellCeiling = 0; refSellCeilingTime = 0;
+            ClearRangeRect(false); ClearRangeRect(true);
+            ExecMarket(-1);
+            return;
+         }
+      }
+      if (refBuyFloor > 0)
+      {
+         double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         double rectLo = refBuyFloor - rangeDist * (1.0 - pct);
+         if (ask <= refBuyFloor && ask >= rectLo)
+         {
+            Print("BUY_ANCHOR_TICK: ask=", DoubleToString(ask, _Digits),
+                  " floor=", DoubleToString(refBuyFloor, _Digits));
+            if (inTrade && isTrendingTrade)
+               for (int i = PositionsTotal() - 1; i >= 0; i--)
+               { ulong t = PositionGetTicket(i);
+                 if (t && PositionGetString(POSITION_SYMBOL) == _Symbol &&
+                     PositionGetInteger(POSITION_MAGIC) == magicNumber)
+                    trade.PositionClose(t); }
+            isFlipTrade = false; isTrendingTrade = false;
+            refBuyFloor = 0; refBuyFloorTime = 0;
+            refSellCeiling = 0; refSellCeilingTime = 0;
+            ClearRangeRect(false); ClearRangeRect(true);
+            ExecMarket(1);
+            return;
          }
       }
    }
@@ -882,27 +1046,68 @@ void OnTick()
          // Flip and trending trades ride the trend — skip exit monitor for them
          if (isFlipTrade || isTrendingTrade) return;
 
-         // Wait for cooldown before scanning for exit signals
-         if (exitCooldownBars > 0) { exitCooldownBars--; return; }
-
-         // Look for a confirmed zone in the opposing direction only
-         double newHi, newLo;
-         double dummy1, dummy2;
-         int zoneDir = UpdateConsolidation(newHi, newLo, dummy1, dummy2);
-         bool isBuyTrade = (tradeType == POSITION_TYPE_BUY);
-         if ((isBuyTrade && zoneDir == -1) || (!isBuyTrade && zoneDir == 1))
+         if (EnableEarlyExit)
          {
-            exitPendingDir = zoneDir;
-            exitZoneHigh   = newHi;
-            exitZoneLow    = newLo;
-            exitWatchBars  = 0;
-            Print("EXIT ZONE armed: flip=", isFlipTrade,
-                  " dir=", exitPendingDir,
-                  " trigger=", (exitPendingDir == -1 ? newHi : newLo),
-                  " cooldown=", exitCooldownBars);
+            // Wait for cooldown before scanning for exit signals
+            if (exitCooldownBars > 0) { exitCooldownBars--; return; }
+
+            // Look for a confirmed zone in the opposing direction only
+            double newHi, newLo;
+            double dummy1, dummy2;
+            int zoneDir = UpdateConsolidation(newHi, newLo, dummy1, dummy2);
+            bool isBuyTrade = (tradeType == POSITION_TYPE_BUY);
+            if ((isBuyTrade && zoneDir == -1) || (!isBuyTrade && zoneDir == 1))
+            {
+               exitPendingDir = zoneDir;
+               exitZoneHigh   = newHi;
+               exitZoneLow    = newLo;
+               exitWatchBars  = 0;
+               Print("EXIT ZONE armed: flip=", isFlipTrade,
+                     " dir=", exitPendingDir,
+                     " trigger=", (exitPendingDir == -1 ? newHi : newLo),
+                     " cooldown=", exitCooldownBars);
+            }
          }
       }
       return;
+   }
+
+   // ── Invalidate range if price has moved out of it ────────────────────────
+   if (!inTrade && pendingDir == 0)
+   {
+      double open1     = iOpen (_Symbol, _Period, 1);
+      double close1    = iClose(_Symbol, _Period, 1);
+      double rangeDist = PipsToPriceDist(HigherLowRangePips);
+
+      double pct      = MathMax(1, MathMin(99, RangeUpperPct)) / 100.0;
+      double buyUp    = rangeDist * pct;          // above BUY floor
+      double buyDown  = rangeDist * (1.0 - pct);  // below BUY floor
+      double sellDown = rangeDist * pct;          // below SELL ceiling
+      double sellUp   = rangeDist * (1.0 - pct);  // above SELL ceiling
+
+      bool buyAbove = open1 > refBuyFloor + buyUp  && close1 > refBuyFloor + buyUp;
+      bool buyBelow = open1 < refBuyFloor - buyDown && close1 < refBuyFloor - buyDown;
+      if (refBuyFloor > 0 && (buyAbove || buyBelow))
+      {
+         Print("REF_BUY_INVALIDATED: full candle outside range. open=",
+               DoubleToString(open1, _Digits), " close=", DoubleToString(close1, _Digits),
+               " rangeBot=", DoubleToString(refBuyFloor - buyDown, _Digits),
+               " rangeTop=", DoubleToString(refBuyFloor + buyUp, _Digits));
+         refBuyFloor = 0; refBuyFloorTime = 0;
+         ClearRangeRect(false);
+      }
+
+      bool sellBelow = open1 < refSellCeiling - sellDown && close1 < refSellCeiling - sellDown;
+      bool sellAbove = open1 > refSellCeiling + sellUp   && close1 > refSellCeiling + sellUp;
+      if (refSellCeiling > 0 && (sellBelow || sellAbove))
+      {
+         Print("REF_SELL_INVALIDATED: full candle outside range. open=",
+               DoubleToString(open1, _Digits), " close=", DoubleToString(close1, _Digits),
+               " rangeBot=", DoubleToString(refSellCeiling - sellDown, _Digits), " rangeTop=",
+               DoubleToString(refSellCeiling + sellUp, _Digits));
+         refSellCeiling = 0; refSellCeilingTime = 0;
+         ClearRangeRect(true);
+      }
    }
 
    // ── Idle — update running consolidation state, then try trending ────────────
@@ -911,12 +1116,12 @@ void OnTick()
       double newHi, newLo, newConsLow, newConsHigh;
       int zoneDir = UpdateConsolidation(newHi, newLo, newConsLow, newConsHigh);
 
-      // ── Trending pattern fires first; consolidation only if enabled ──────────
-      if (zoneDir == 0 || !EnableConsolidationTrades)
+      // ── Trending pattern fires first ─────────────────────────────────────────
+      if (zoneDir == 0)
       {
          int    trendDir = 0;
          double trendSL  = 0;
-         if (CheckTrendingSetup(trendDir, trendSL) && DXYConfirms(trendDir))
+         if (EnableTrendingTrades && CheckTrendingSetup(trendDir, trendSL) && DXYConfirms(trendDir))
          {
             double curDXY    = CalcDXY();
             double dxyDelta  = (dxySnapshot > 0 && curDXY > 0) ? (curDXY - dxySnapshot) : 0;
@@ -926,34 +1131,94 @@ void OnTick()
             isFlipTrade     = false;
             isTrendingTrade = true;
             ExecMarket(trendDir);
-            // Redraw label with DXY delta (replaces the one drawn inside ExecMarket)
             DrawTradeLabel(trendDir == 1, false, true, dxyDelta);
             MoveSLToPrice(trendSL);
+            return;
          }
-         return;
+         // No consolidation detected this bar — still run trigger scan if a reference is set
+         if (refBuyFloor == 0 && refSellCeiling == 0) return;
       }
 
-      // EMA 200 cross check: no cross in last 100 bars = strongly trending → flip
-      // Only flip if the flipped direction agrees with price's position relative to EMA 200:
-      //   flip to SELL only if price is below EMA 200
-      //   flip to BUY  only if price is above EMA 200
-      // No EMA 200 cross = strongly trending — skip consolidation, let trending pattern handle it
-      if (!HasEMA200Cross(100))
+      double rangeDist = PipsToPriceDist(HigherLowRangePips);
+
+      // ── Higher-low (BUY) / lower-high (SELL) reference management ────────────
+      // This runs before the EMA200 check so the range rect is always kept up to date.
+      // The EMA200 check only gates actual zone arming.
+      if (zoneDir == 1) // BUY floor detected by reference scan
       {
-         Print("EMA200: no cross in 100 bars — skipping consolidation zone, trending pattern will handle");
-         return;
+         double flr = newLo; // actual support level
+
+         double pct    = MathMax(1, MathMin(99, RangeUpperPct)) / 100.0;
+         double buyUp  = rangeDist * pct;
+         double buyDn  = rangeDist * (1.0 - pct);
+         if (refBuyFloor == 0) // first floor — set reference, draw range, wait
+         {
+            refBuyFloor     = flr;
+            refBuyFloorTime = iTime(_Symbol, _Period, 1);
+            DrawRangeRect(refBuyFloor - buyDn, refBuyFloor + buyUp, false);
+            Print("REF_BUY_SET: floor=", DoubleToString(refBuyFloor, _Digits), " range top=",
+                  DoubleToString(refBuyFloor + buyUp, _Digits));
+            return;
+         }
+         else if (flr < refBuyFloor) // lower low — reset reference
+         {
+            refBuyFloor     = flr;
+            refBuyFloorTime = iTime(_Symbol, _Period, 1);
+            DrawRangeRect(refBuyFloor - buyDn, refBuyFloor + buyUp, false);
+            Print("REF_BUY_LOWER: new floor=", DoubleToString(refBuyFloor, _Digits));
+            return;
+         }
+         else if (flr > refBuyFloor + buyUp) // too far above range — reset
+         {
+            Print("REF_BUY_RESET: floor=", DoubleToString(flr, _Digits),
+                  " too far above ref=", DoubleToString(refBuyFloor, _Digits));
+            refBuyFloor = 0; refBuyFloorTime = 0;
+            ClearRangeRect(false);
+            return;
+         }
+         // else: floor is inside range — valid higher low, fall through to trigger scan
+         Print("REF_BUY_VALID: higher low at=", DoubleToString(flr, _Digits),
+               " ref=", DoubleToString(refBuyFloor, _Digits));
+      }
+      else if (zoneDir == -1) // SELL ceiling detected by reference scan
+      {
+         double ceil = newHi; // actual resistance level
+
+         double pct     = MathMax(1, MathMin(99, RangeUpperPct)) / 100.0;
+         double sellDn  = rangeDist * pct;
+         double sellUp  = rangeDist * (1.0 - pct);
+         if (refSellCeiling == 0) // first ceiling — set reference, draw range, wait
+         {
+            refSellCeiling     = ceil;
+            refSellCeilingTime = iTime(_Symbol, _Period, 1);
+            DrawRangeRect(refSellCeiling - sellDn, refSellCeiling + sellUp, true);
+            Print("REF_SELL_SET: ceiling=", DoubleToString(refSellCeiling, _Digits), " range bot=",
+                  DoubleToString(refSellCeiling - sellDn, _Digits));
+            return;
+         }
+         else if (ceil > refSellCeiling) // higher high — reset reference
+         {
+            refSellCeiling     = ceil;
+            refSellCeilingTime = iTime(_Symbol, _Period, 1);
+            DrawRangeRect(refSellCeiling - sellDn, refSellCeiling + sellUp, true);
+            Print("REF_SELL_HIGHER: new ceiling=", DoubleToString(refSellCeiling, _Digits));
+            return;
+         }
+         else if (ceil < refSellCeiling - sellDn) // too far below range — reset
+         {
+            Print("REF_SELL_RESET: ceiling=", DoubleToString(ceil, _Digits),
+                  " too far below ref=", DoubleToString(refSellCeiling, _Digits));
+            refSellCeiling = 0; refSellCeilingTime = 0;
+            ClearRangeRect(true);
+            return;
+         }
+         // else: ceiling is inside range — valid lower high, fall through to trigger scan
+         Print("REF_SELL_VALID: lower high at=", DoubleToString(ceil, _Digits),
+               " ref=", DoubleToString(refSellCeiling, _Digits));
       }
 
-      isFlipTrade = false;
-      zoneHigh    = newHi;
-      zoneLow     = newLo;
-      pendingDir  = zoneDir;
-      watchBars   = 0;
-
-      DrawZone(zoneHigh, zoneLow);
-      Print("Zone armed: dir=", pendingDir,
-            " trigger=", (pendingDir == -1 ? zoneHigh : zoneLow),
-            " window=", EntryWindowBars, " bars");
+      // No trigger scan needed — anchor touch is handled tick-level above
+      return;
    }
 }
 
