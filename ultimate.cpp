@@ -73,8 +73,8 @@ input bool   EnableR5R6                 = true;   // enable Rule 5 and Rule 6
 input int    EntryMaxWaitBars           = 50;   // maximum bars to wait after arming; arm expires after this
 input double StopLossDollars            = 30.0;
 input double TakeProfitDollars          = 250.0;
-input double TrailingActivateFactor     = 1.5;  // trailing activates when profit >= SL × this
-input double TrailingRetracementFactor  = 0.25;  // fraction of peak profit the SL locks in (0.25 = keep 25% of peak)
+input double TrailingActivateFactor     = 2.0;  // trailing activates when profit >= SL × this
+input double TrailingRetracementFactor  = 0.45;  // fraction of peak profit the SL locks in (0.25 = keep 25% of peak)
 input double TrendingTrailAdvanceFactor = 0.5;  // how fast SL advances from original SL for trending trades (0.5 = $0.50 per $1 profit)
 input int    MaxConsecutiveLosses       = 3;
 input double PrevZoneTolerance          = 5.0;  // current zone must be within $X of a previous consolidation level
@@ -368,28 +368,30 @@ void DrawConsolidationMark(datetime t, double price, bool isStart, bool isSell)
       lastConsolidationXAUDelta = xauDelta;
 
       string lid = (isSell ? "DXYMark_S_" : "DXYMark_B_") + IntegerToString((long)t);
-
-      // 4 stacked rows — all anchored at time t, each 1.5 price units apart
-      double r0=price, r1=price-1.5, r2=price-3.0, r3=price-4.5;
-      string texts[4]  = { "DXY prev:"+(dxySnapshot>=0?"+":"")+DoubleToString(dxySnapshot,3)+"% cur:"+(curDXYPct>=0?"+":"")+DoubleToString(curDXYPct,3)+"%",
-                           "      ("+(dxyDelta>=0?"+":"")+DoubleToString(dxyDelta,3)+"%)",
-                           "XAU prev:"+(xauSnapshot>=0?"+":"")+DoubleToString(xauSnapshot,3)+"% cur:"+(curXAUPct>=0?"+":"")+DoubleToString(curXAUPct,3)+"%",
-                           "      ("+(xauDelta>=0?"+":"")+DoubleToString(xauDelta,3)+"%)" };
-      color  colors[4] = { clrRed,
-                           dxyDelta>=0 ? clrLimeGreen : clrWhite,
-                           clrDodgerBlue,
-                           xauDelta>=0 ? clrLimeGreen : clrWhite };
-      double rows[4]   = { r0, r1, r2, r3 };
-      // Only draw if none of the rows exist yet — prevents overlay on EA restart
       if (ObjectFind(0, lid + "_0") >= 0) return;
 
-      for (int i = 0; i < 4; i++) {
+      string dxyArrow = (dxyDelta >= 0) ? "^" : "v";
+      string xauArrow = (xauDelta >= 0) ? "^" : "v";
+      string mtexts[2];
+      color  mcolors[2];
+      double mstep = 0.6;
+      double mrows[2] = { price, price - mstep };
+      mtexts[0] = "$ p:" + (dxySnapshot >= 0 ? "+" : "") + DoubleToString(dxySnapshot, 2) + "%"
+                + "  c:" + (curDXYPct   >= 0 ? "+" : "") + DoubleToString(curDXYPct,   2) + "%"
+                + "  " + dxyArrow + (dxyDelta >= 0 ? "+" : "") + DoubleToString(dxyDelta, 2) + "%";
+      mcolors[0] = (dxyDelta >= 0) ? clrDodgerBlue : clrRed;
+      mtexts[1] = "G p:" + (xauSnapshot >= 0 ? "+" : "") + DoubleToString(xauSnapshot, 2) + "%"
+                + "  c:" + (curXAUPct   >= 0 ? "+" : "") + DoubleToString(curXAUPct,   2) + "%"
+                + "  " + xauArrow + (xauDelta >= 0 ? "+" : "") + DoubleToString(xauDelta, 2) + "%";
+      mcolors[1] = (xauDelta >= 0) ? clrDodgerBlue : clrRed;
+      for (int i = 0; i < 2; i++) {
          string n = lid + "_" + IntegerToString(i);
-         ObjectCreate(0, n, OBJ_TEXT, 0, t, rows[i]);
-         ObjectSetString (0, n, OBJPROP_TEXT,     texts[i]);
-         ObjectSetInteger(0, n, OBJPROP_COLOR,    colors[i]);
+         ObjectCreate(0, n, OBJ_TEXT, 0, t, mrows[i]);
+         ObjectSetString (0, n, OBJPROP_TEXT,     mtexts[i]);
+         ObjectSetInteger(0, n, OBJPROP_COLOR,    mcolors[i]);
          ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 14);
          ObjectSetString (0, n, OBJPROP_FONT,     "Arial Bold");
+         ObjectSetInteger(0, n, OBJPROP_ANCHOR,   ANCHOR_RIGHT);
       }
 
       dxySnapshot = curDXYPct;   // store daily % for next consolidation's "prev"
@@ -447,34 +449,38 @@ void DrawEntry(bool isBuy)
 
 void DrawTradeLabel(bool isBuy, bool isFlip, bool isTrending = false, double dxyDelta = 0)
 {
-   string name  = "TradeLabel_" + IntegerToString(TimeCurrent());
-   double price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   datetime t     = TimeCurrent();
+   double   price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string   base  = "TradeLabel_" + IntegerToString((long)t);
 
-   double curDXY  = CalcDXY();
-   double dxyPct  = (dxySnapshot > 0 && curDXY > 0) ? ((curDXY - dxySnapshot) / dxySnapshot * 100.0) : 0;
-   string dxyStr  = " DXY:" + (dxyPct >= 0 ? "+" : "") + DoubleToString(dxyPct, 3) + "%";
+   // DXY
+   double curDXY    = CalcDXY();
+   double dxyOpenVal= CalcDXYDailyOpen();
+   double curDXYPct = (dxyOpenVal > 0 && curDXY > 0) ? ((curDXY - dxyOpenVal) / dxyOpenVal * 100.0) : 0;
+   double dxyChg    = curDXYPct - dxySnapshot;
+   string dxyArrow  = (dxyChg >= 0) ? "^" : "v";
 
-   string text;
-   color  clr;
-   if (isTrending)
-   {
-      text = (isBuy ? "TRENDING BUY" : "TRENDING SELL") + dxyStr;
-      clr  = isBuy ? clrAqua : clrGold;
-   }
-   else if (isFlip)
-   {
-      text = (isBuy ? "FLIP TO BUY"  : "FLIP TO SELL") + dxyStr;
-      clr  = isBuy ? clrOrange : clrViolet;
-   }
-   else
-   {
-      text = (isBuy ? "NORMAL BUY"   : "NORMAL SELL") + dxyStr;
-      clr  = isBuy ? clrLime : clrRed;
-   }
-   ObjectCreate(0, name, OBJ_TEXT, 0, TimeCurrent(), price);
-   ObjectSetString(0, name, OBJPROP_TEXT, text);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
+   // XAU
+   double curXAU    = SymbolInfoDouble("XAUUSD", SYMBOL_BID);
+   double xauOpenVal= iOpen("XAUUSD", PERIOD_D1, 0);
+   double curXAUPct = (xauOpenVal > 0 && curXAU > 0) ? ((curXAU - xauOpenVal) / xauOpenVal * 100.0) : 0;
+   double xauChg    = curXAUPct - xauSnapshot;
+   string xauArrow  = (xauChg >= 0) ? "^" : "v";
+
+   string dir = isBuy ? "Buy" : "Sell";
+   color  dirClr;
+   if (isTrending) dirClr = isBuy ? clrAqua    : clrGold;
+   else if (isFlip) dirClr = isBuy ? clrOrange  : clrViolet;
+   else             dirClr = isBuy ? clrLime    : clrRed;
+
+   // Only show the rule name — DXY/XAU info is already on the consolidation mark label
+   string n = base + "_0";
+   ObjectCreate(0, n, OBJ_TEXT, 0, t, price - 1.8);
+   ObjectSetString (0, n, OBJPROP_TEXT,     dir + " [" + lastEntryRule + "]");
+   ObjectSetInteger(0, n, OBJPROP_COLOR,    dirClr);
+   ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 14);
+   ObjectSetString (0, n, OBJPROP_FONT,     "Arial Bold");
+   ObjectSetInteger(0, n, OBJPROP_ANCHOR,   ANCHOR_RIGHT);
 }
 
 void DrawStopLine(double price)
@@ -582,23 +588,29 @@ void PrintChangeStats()
    double   price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    string   id    = "CL_" + IntegerToString((long)now);
 
-   string texts2[4]  = { "DXY prev:"+(dxySnapshot>=0?"+":"")+DoubleToString(dxySnapshot,3)+"% cur:"+(curDXYPct>=0?"+":"")+DoubleToString(curDXYPct,3)+"%",
-                         "      ("+(dxyDelta>=0?"+":"")+DoubleToString(dxyDelta,3)+"%)",
-                         "XAU prev:"+(xauSnapshot>=0?"+":"")+DoubleToString(xauSnapshot,3)+"% cur:"+(curXAUPct>=0?"+":"")+DoubleToString(curXAUPct,3)+"%",
-                         "      ("+(xauDelta>=0?"+":"")+DoubleToString(xauDelta,3)+"%)" };
-   color  colors2[4] = { clrRed,
-                         dxyDelta>=0 ? clrLimeGreen : clrWhite,
-                         clrDodgerBlue,
-                         xauDelta>=0 ? clrLimeGreen : clrWhite };
-   double rows2[4]   = { price, price-1.5, price-3.0, price-4.5 };
-   for (int i = 0; i < 4; i++) {
-      string n = id + "_" + IntegerToString(i);
-      ObjectDelete(0, n);
-      ObjectCreate(0, n, OBJ_TEXT, 0, now, rows2[i]);
-      ObjectSetString (0, n, OBJPROP_TEXT,     texts2[i]);
-      ObjectSetInteger(0, n, OBJPROP_COLOR,    colors2[i]);
-      ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 14);
-      ObjectSetString (0, n, OBJPROP_FONT,     "Arial Bold");
+   string dxyArrow2 = (dxyDelta >= 0) ? "^" : "v";
+   string xauArrow2 = (xauDelta >= 0) ? "^" : "v";
+   string ptexts[2];
+   color  pcolors[2];
+   double pstep = 0.6;
+   double prows[2] = { price, price - pstep };
+   ptexts[0] = "$ p:" + (dxySnapshot >= 0 ? "+" : "") + DoubleToString(dxySnapshot, 2) + "%"
+             + "  c:" + (curDXYPct   >= 0 ? "+" : "") + DoubleToString(curDXYPct,   2) + "%"
+             + "  " + dxyArrow2 + (dxyDelta >= 0 ? "+" : "") + DoubleToString(dxyDelta, 2) + "%";
+   pcolors[0] = (dxyDelta >= 0) ? clrDodgerBlue : clrRed;
+   ptexts[1] = "G p:" + (xauSnapshot >= 0 ? "+" : "") + DoubleToString(xauSnapshot, 2) + "%"
+             + "  c:" + (curXAUPct   >= 0 ? "+" : "") + DoubleToString(curXAUPct,   2) + "%"
+             + "  " + xauArrow2 + (xauDelta >= 0 ? "+" : "") + DoubleToString(xauDelta, 2) + "%";
+   pcolors[1] = (xauDelta >= 0) ? clrDodgerBlue : clrRed;
+   for (int i = 0; i < 2; i++) {
+      string n2 = id + "_" + IntegerToString(i);
+      ObjectDelete(0, n2);
+      ObjectCreate(0, n2, OBJ_TEXT, 0, now, prows[i]);
+      ObjectSetString (0, n2, OBJPROP_TEXT,     ptexts[i]);
+      ObjectSetInteger(0, n2, OBJPROP_COLOR,    pcolors[i]);
+      ObjectSetInteger(0, n2, OBJPROP_FONTSIZE, 14);
+      ObjectSetString (0, n2, OBJPROP_FONT,     "Arial Bold");
+      ObjectSetInteger(0, n2, OBJPROP_ANCHOR,   ANCHOR_RIGHT);
    }
 
    ChartRedraw(0);
@@ -884,6 +896,28 @@ void OnTick()
    }
 
 
+   // ── R5/R6 ceiling/floor touch watcher (tick-level) ───────────────────────
+   if (!inTrade && r56PendingDir != 0 && r56TriggerPrice > 0 && EnableR5R6)
+   {
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      bool hit = (r56PendingDir == -1 && bid >= r56TriggerPrice) ||
+                 (r56PendingDir ==  1 && ask <= r56TriggerPrice);
+      if (hit)
+      {
+         int    dir     = r56PendingDir;
+         double trigger = r56TriggerPrice;
+         r56PendingDir = 0; r56WatchBars = 0; r56TriggerPrice = 0;
+         lastEntryRule = (dir == -1) ? "R5_SELL" : "R6_BUY";
+         Print((dir == -1 ? "R5_ENTRY SELL" : "R6_ENTRY BUY"),
+               ": price=", DoubleToString(dir == -1 ? bid : ask, _Digits),
+               " trigger=", DoubleToString(trigger, _Digits));
+         isFlipTrade = false; isTrendingTrade = false;
+         ExecMarket(dir);
+         return;
+      }
+   }
+
    // ── Per-bar logic ─────────────────────────────────────────────────────────
    datetime currentBar = iTime(_Symbol, _Period, 0);
    if (currentBar == lastProcessedBar) return;
@@ -1057,24 +1091,14 @@ void OnTick()
                      "% XAU=", DoubleToString(lastConsolidationXAUDelta, 3), "%");
          }
 
-         // R6: XAU delta positive + DXY negative → BUY immediately
-         if (EnableR5R6 && !inTrade)
+         // R6: fallback — arm BUY at floor, only if R1 did not arm
+         if (EnableR5R6 && rPendingDir == 0)
          {
-            bool xauPos = (lastConsolidationXAUDelta > 0);
-            bool dxyNeg = (lastConsolidationDXYDelta < 0);
-            if (xauPos && dxyNeg)
-            {
-               Print("R6_BUY_ENTRY: price below EMA200=", DoubleToString(ema200, _Digits),
-                     " XAU delta=", DoubleToString(lastConsolidationXAUDelta, 3),
-                     "% DXY delta=", DoubleToString(lastConsolidationDXYDelta, 3), "%");
-               lastEntryRule = "R6_BUY";
-               ExecMarket(1);
-               return;
-            }
-            else
-               Print("R6_BUY_SKIP: xauPos=", xauPos, " dxyNeg=", dxyNeg,
-                     " XAU=", DoubleToString(lastConsolidationXAUDelta, 3),
-                     "% DXY=", DoubleToString(lastConsolidationDXYDelta, 3), "%");
+            r56PendingDir = 1; r56WatchBars = 0; r56TriggerPrice = newLo;
+            Print("R6_BUY_ARMED: R1 skipped — waiting for price to return to floor=", DoubleToString(newLo, _Digits),
+                  " EMA200=", DoubleToString(ema200, _Digits),
+                  " XAU delta=", DoubleToString(lastConsolidationXAUDelta, 3),
+                  "% DXY delta=", DoubleToString(lastConsolidationDXYDelta, 3), "%");
          }
       }
 
@@ -1101,24 +1125,14 @@ void OnTick()
                      "% DXY=", DoubleToString(lastConsolidationDXYDelta, 3), "%");
          }
 
-         // R5: DXY delta positive + XAU negative → SELL immediately
-         if (EnableR5R6 && !inTrade)
+         // R5: fallback — arm SELL at ceiling, only if R2 did not arm
+         if (EnableR5R6 && rPendingDir == 0)
          {
-            bool dxyPos = (lastConsolidationDXYDelta > 0);
-            bool xauNeg = (lastConsolidationXAUDelta < 0);
-            if (dxyPos && xauNeg)
-            {
-               Print("R5_SELL_ENTRY: price above EMA200=", DoubleToString(ema200, _Digits),
-                     " DXY delta=", DoubleToString(lastConsolidationDXYDelta, 3),
-                     "% XAU delta=", DoubleToString(lastConsolidationXAUDelta, 3), "%");
-               lastEntryRule = "R5_SELL";
-               ExecMarket(-1);
-               return;
-            }
-            else
-               Print("R5_SELL_SKIP: dxyPos=", dxyPos, " xauNeg=", xauNeg,
-                     " DXY=", DoubleToString(lastConsolidationDXYDelta, 3),
-                     "% XAU=", DoubleToString(lastConsolidationXAUDelta, 3), "%");
+            r56PendingDir = -1; r56WatchBars = 0; r56TriggerPrice = newHi;
+            Print("R5_SELL_ARMED: R2 skipped — waiting for price to return to ceiling=", DoubleToString(newHi, _Digits),
+                  " EMA200=", DoubleToString(ema200, _Digits),
+                  " DXY delta=", DoubleToString(lastConsolidationDXYDelta, 3),
+                  "% XAU delta=", DoubleToString(lastConsolidationXAUDelta, 3), "%");
          }
       }
 
@@ -1175,6 +1189,7 @@ void OnTick()
 int OnInit()
 {
    trade.SetExpertMagicNumber(magicNumber);
+   ObjectsDeleteAll(0);
    return INIT_SUCCEEDED;
 }
 
